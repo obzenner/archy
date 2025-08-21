@@ -30,8 +30,37 @@ if [ ! -f "$ARCH_SCRIPT" ]; then
     exit 1
 fi
 
-# Parse command and flags
+# Security Functions (lightweight versions)
+validate_path_basic() {
+    local path="$1"
+    # Check for directory traversal attempts
+    if [[ "$path" =~ \.\./|\.\.\\ ]] || [[ "$path" =~ /\.\./|/\.\.\\ ]]; then
+        echo "❌ ERROR: Path traversal detected: $path" >&2
+        exit 1
+    fi
+}
 
+validate_filename_basic() {
+    local filename="$1"
+    # Only allow safe filename characters
+    if [[ ! "$filename" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        echo "❌ ERROR: Invalid characters in filename: $filename" >&2
+        exit 1
+    fi
+}
+
+validate_backend() {
+    local backend="$1"
+    case "$backend" in
+        "cursor-agent"|"fabric"|"cursor") ;;
+        *)
+            echo "❌ ERROR: Invalid AI backend '$backend'. Supported: cursor-agent, fabric" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Parse command and flags
 
 parse_flags() {
     local mode="$1"
@@ -79,8 +108,14 @@ parse_flags() {
         esac
     done
     
-    # Set AI backend environment variable if specified
+    # Security validations
+    validate_path_basic "$PROJECT_PATH"
+    if [ -n "$SUBFOLDER" ]; then
+        validate_path_basic "$SUBFOLDER"
+    fi
+    validate_filename_basic "$ARCH_FILE"
     if [ -n "$AI_TOOL" ]; then
+        validate_backend "$AI_TOOL"
         export ARCHY_AI_BACKEND="$AI_TOOL"
     fi
     
@@ -130,6 +165,7 @@ test_ai_backend() {
     
     # Set provider environment variable if specified
     if [ -n "$provider" ]; then
+        validate_backend "$provider"
         export ARCHY_AI_BACKEND="$provider"
     fi
     

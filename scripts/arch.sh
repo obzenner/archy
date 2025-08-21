@@ -11,8 +11,9 @@
 
 set -euo pipefail
 
-# Create temp directory in system temp space
+# Create temp directory in system temp space with secure permissions
 TEMP_DIR=$(mktemp -d -t archy-XXXXXX)
+chmod 700 "$TEMP_DIR"  # Only owner can read/write/execute
 
 # Trap to ensure cleanup even on errors/interrupts
 cleanup_tmp() {
@@ -36,8 +37,71 @@ NC='\033[0m' # No Color
 # Get script directory early, before we change working directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# AI Backend Configuration
+# Security Functions
+validate_path() {
+    local path="$1"
+    local description="$2"
+    
+    # Check for directory traversal attempts
+    if [[ "$path" =~ \.\./|\.\.\\ ]] || [[ "$path" =~ /\.\./|/\.\.\\ ]]; then
+        echo -e "${RED}ERROR:${NC} Path traversal detected in $description: $path" >&2
+        exit 1
+    fi
+    
+    # Prevent access to sensitive system directories
+    case "$path" in
+        /etc/*|/sys/*|/proc/*|/dev/*|/boot/*|/root/*)
+            echo -e "${RED}ERROR:${NC} Access to system directory not allowed: $path" >&2
+            exit 1
+            ;;
+    esac
+    
+    # Ensure path is reasonable length (prevent buffer issues)
+    if [[ ${#path} -gt 4096 ]]; then
+        echo -e "${RED}ERROR:${NC} Path too long: $path" >&2
+        exit 1
+    fi
+}
+
+validate_filename() {
+    local filename="$1"
+    # Only allow safe filename characters
+    if [[ ! "$filename" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        echo -e "${RED}ERROR:${NC} Invalid characters in filename: $filename" >&2
+        exit 1
+    fi
+}
+
+validate_file_write() {
+    local filepath="$1"
+    local dir_path
+    dir_path="$(dirname "$filepath")"
+    
+    # Check if directory is writable
+    if [[ ! -w "$dir_path" ]]; then
+        echo -e "${RED}ERROR:${NC} Cannot write to directory: $dir_path" >&2
+        exit 1
+    fi
+    
+    # If file exists, check if it's writable
+    if [[ -f "$filepath" && ! -w "$filepath" ]]; then
+        echo -e "${RED}ERROR:${NC} Cannot overwrite existing file: $filepath" >&2
+        exit 1
+    fi
+    
+    # Validate final path
+    validate_path "$filepath" "output file"
+}
+
+# AI Backend Configuration with validation
 ARCHY_AI_BACKEND="${ARCHY_AI_BACKEND:-cursor-agent}"
+case "$ARCHY_AI_BACKEND" in
+    "cursor-agent"|"fabric") ;;
+    *)
+        echo -e "${RED}ERROR:${NC} Invalid AI backend '$ARCHY_AI_BACKEND'. Supported: cursor-agent, fabric" >&2
+        exit 1
+        ;;
+esac
 
 # AI Backend abstraction function
 call_ai_backend() {
@@ -77,6 +141,13 @@ PROJECT_PATH="${1:-.}"
 SUBFOLDER="${2:-}"
 ARCH_FILE_NAME="${3:-arch.md}"
 PROJECT_NAME="${4:-}"
+
+# Security validations
+validate_path "$PROJECT_PATH" "project path"
+if [ -n "$SUBFOLDER" ]; then
+    validate_path "$SUBFOLDER" "subfolder"
+fi
+validate_filename "$ARCH_FILE_NAME"
 
 # Normalize project path to absolute early
 PROJECT_PATH_ABS=$(cd "$PROJECT_PATH" 2>/dev/null && pwd) || {
@@ -177,6 +248,7 @@ if [ "$FRESH_MODE" = true ]; then
 
     # Write the architecture document to the target location
     echo -e "${GREEN}Writing fresh architecture document...${NC}"
+    validate_file_write "$ARCH_FILE"
     cp $TEMP_DIR/new_arch.md "$ARCH_FILE"
 
     ACTION="created"
@@ -330,6 +402,7 @@ else
     else
         echo -e "${GREEN}Writing new architecture document...${NC}"
     fi
+    validate_file_write "$ARCH_FILE"
     cp $TEMP_DIR/proposed_arch.md "$ARCH_FILE"
 fi
 
