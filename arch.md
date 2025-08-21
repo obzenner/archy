@@ -1,4 +1,4 @@
-## BUSINESS POSTURE
+I'll fetch the latest from origin, then get the commit list and diff stats for your branch relative to origin/main to identify architecture-impacting changes.I'll get the commit list and diffs since origin/main to understand architecture-impacting changes.## BUSINESS POSTURE
 
 - Purpose: automate creation and updates of architecture design documents with C4 diagrams from local code and git diffs
 - Priorities: developer productivity, local-first workflow, reproducibility, fast feedback with progress, minimal setup
@@ -6,6 +6,7 @@
 - Constraints: operates within repository boundaries, avoids long-lived processes, supports monorepos and subfolders
 - [Updated] Local, versioned patterns only under patterns directory; remote fetch removed for determinism
 - [Updated] Consistent CLI via archy command and interactive wrappers for fresh and update flows
+- [Updated] Legacy pattern fetch scripts removed in favor of local patterns: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh deleted to eliminate remote sources and simplify the flow
 
 Business risks:
 - Inaccurate or stale documentation if generation drifts from code or fails silently
@@ -13,6 +14,7 @@ Business risks:
 - Destructive or misplaced file writes due to path misuse
 - Supply chain exposure from external CLIs and remote pattern sources
 - [Updated] Pattern updates require repo changes and reviews because remote fetch is removed
+- [Updated] Reduced supply chain risk by removing remote pattern retrieval and curl-based fetch paths
 
 ## SECURITY POSTURE
 
@@ -26,7 +28,8 @@ security control: Make scripts executable with explicit chmod before run
 [Updated] security control: Local, versioned patterns only; no runtime fetch from remote sources  
 [Updated] security control: Path and filename validation for inputs and outputs in arch sh and archy  
 [Updated] security control: Temp directory isolation with automatic cleanup via traps  
-[Updated] security control: AI backend selection restricted to cursor agent or fabric with output normalization
+[Updated] security control: AI backend selection restricted to cursor agent or fabric with output normalization  
+[Updated] security control: Network egress narrowed to model provider only; remote pattern fetch binaries and scripts removed
 
 accepted risk: External model API may receive prompts and summaries from local repo  
 accepted risk: Local scripts can modify repository files including documentation  
@@ -76,7 +79,8 @@ flowchart LR
     Cursor_Agent_CLI --> Model_Provider_API
 ```
 
-[Updated] Removed GitHub Pattern Repository and related link since patterns are now local and versioned in repository.
+[Updated] Removed GitHub Pattern Repository and related link since patterns are now local and versioned in repository.  
+[Updated] Egress constrained to model provider only; no network calls for pattern retrieval.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -125,7 +129,8 @@ flowchart TB
 
 [Updated] Added arch sh orchestrator, archy CLI, and CLI wrappers nodes and flows.  
 [Updated] Removed curl CLI and GitHub Pattern Source; patterns are read locally.  
-[Updated] Explicitly modeled jq CLI as part of normalization and parsing.
+[Updated] Explicitly modeled jq CLI as part of normalization and parsing.  
+[Updated] Legacy fetch scripts removed: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh are no longer part of the system.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -143,7 +148,8 @@ flowchart TB
 | Model Provider API | External Container | Cloud LLM | Text generation | TLS, auth, quotas |
 
 [Updated] Removed Shell Scripts Bash generic node in favor of explicit arch sh orchestrator.  
-[Updated] Removed curl CLI and GitHub Pattern Source rows due to local-only patterns.
+[Updated] Removed curl CLI and GitHub Pattern Source rows due to local-only patterns.  
+[Updated] Removed legacy fetch scripts components aligned with deleted files.
 
 ### C4 DEPLOYMENT
 
@@ -184,7 +190,8 @@ flowchart TB
 ```
 
 [Updated] Added archy CLI command and arch sh process; removed curl binary and GitHub cloud.  
-[Updated] Network egress limited to model provider via cursor agent binary.
+[Updated] Network egress limited to model provider via cursor agent binary.  
+[Updated] Removed legacy pattern fetch processes to align with local-only pattern sourcing.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -202,7 +209,8 @@ flowchart TB
 | Architecture Document File | Artifact | Generated doc | Final deliverable | Atomic writes |
 | Model Provider Cloud API | Service | Cloud LLM | Text generation | TLS, API keys |
 
-[Updated] Removed curl binary and GitHub cloud rows; no remote pattern retrieval in runtime.
+[Updated] Removed curl binary and GitHub cloud rows; no remote pattern retrieval in runtime.  
+[Updated] Eliminated fetch script binaries from deployment due to file deletions.
 
 ## RISK ASSESSMENT
 
@@ -210,6 +218,7 @@ flowchart TB
 - Data to protect and sensitivity: source code and diffs (high, proprietary); architecture documents (medium, internal); prompts and generated outputs (medium, may summarize sensitive code); model provider credentials (high)
 - [Updated] Risk: dependency on presence and configuration of AI backend cursor agent or fabric
 - [Updated] Risk: change-driven updates only consider file types in configured globs which may omit relevant config or uncommon languages
+- [Updated] Reduced risk: removal of remote pattern fetch reduces supply chain and drift exposure
 
 ## QUESTIONS & ASSUMPTIONS
 
@@ -228,3 +237,4 @@ Assumptions:
 - Patterns are primarily sourced locally; remote fetch is optional and pinned when enabled
 - Monorepo support via subfolder targeting; Python 3.10+ and macOS environment
 - [Updated] Primary execution path uses local patterns and archy CLI with arch sh orchestrator for both fresh and update flows
+- [Updated] Legacy fetch scripts removed; arch.sh and archy underwent readability refactors without changing external interfaces

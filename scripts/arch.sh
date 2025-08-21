@@ -421,7 +421,8 @@ setup_environment() {
 extract_git_changes() {
     local changes_file="$WORK_DIR/changes.diff"
     
-    warn "Analyzing git changes from ${DEFAULT_BRANCH}...HEAD..."
+    # Send informational messages to stderr to avoid capture in command substitution
+    warn "Analyzing git changes from ${DEFAULT_BRANCH}...HEAD..." >&2
     
     # Build file extension filters for git diff
     local extension_filters=()
@@ -439,7 +440,7 @@ extract_git_changes() {
         error_exit "No changes found in current branch compared to $DEFAULT_BRANCH"
     fi
     
-    success "Found git changes to analyze"
+    success "Found git changes to analyze" >&2
     echo "$changes_file"
 }
 
