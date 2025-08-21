@@ -1,0 +1,153 @@
+#!/bin/bash
+
+# archy: Architecture documentation generator
+# Usage: 
+#   archy fresh [-p project] [-f folder] [-d doc] [-n name]   - Create fresh architecture doc
+#   archy update [-p project] [-f folder] [-d doc]           - Update from git changes
+#   archy [file]                                              - Treat first arg as filename for update
+
+set -euo pipefail
+
+# Find the actual arch.sh script (resolve symlinks)
+if [ -L "$0" ]; then
+    # Follow symlink to get actual script location
+    REAL_SCRIPT="$(readlink "$0")"
+    if [[ "$REAL_SCRIPT" = /* ]]; then
+        # Absolute path
+        SCRIPT_DIR="$(dirname "$REAL_SCRIPT")"
+    else
+        # Relative path
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+    fi
+else
+    # Not a symlink
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
+ARCH_SCRIPT="$SCRIPT_DIR/arch.sh"
+
+if [ ! -f "$ARCH_SCRIPT" ]; then
+    echo "❌ Cannot find arch.sh script."
+    exit 1
+fi
+
+# Parse command and flags
+parse_flags() {
+    local mode="$1"
+    shift
+    
+    # Default values
+    PROJECT_PATH="."
+    SUBFOLDER=""
+    ARCH_FILE="arch.md"
+    PROJECT_NAME=""
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p|--project)
+                PROJECT_PATH="$2"
+                shift 2
+                ;;
+            -f|--folder)
+                SUBFOLDER="$2"
+                shift 2
+                ;;
+            -d|--doc)
+                ARCH_FILE="$2"
+                shift 2
+                ;;
+            -n|--name)
+                PROJECT_NAME="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                echo "❌ Unknown flag: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Execute the command
+    if [ "$mode" = "fresh" ]; then
+        echo "🏗️  Creating fresh architecture documentation..."
+        echo "   Project: $PROJECT_PATH"
+        echo "   Folder: ${SUBFOLDER:-"(root)"}"
+        echo "   Output: $ARCH_FILE"
+        echo "   Name: ${PROJECT_NAME:-"(auto-detect)"}"
+        
+        if [ -n "$PROJECT_NAME" ]; then
+            exec "$ARCH_SCRIPT" --fresh "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE" "$PROJECT_NAME"
+        else
+            exec "$ARCH_SCRIPT" --fresh "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE"
+        fi
+    else
+        echo "🔄 Updating architecture documentation..."
+        echo "   Project: $PROJECT_PATH"
+        echo "   Folder: ${SUBFOLDER:-"(root)"}"
+        echo "   File: $ARCH_FILE"
+        
+        exec "$ARCH_SCRIPT" "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE"
+    fi
+}
+
+show_help() {
+    echo "archy: 🏛️ Architecture documentation generator using cursor-agent CLI 🏛️"
+    echo ""
+    echo "Usage:"
+    echo "  archy fresh [-p project] [-f folder] [-d doc] [-n name]"
+    echo "  archy update [-p project] [-f folder] [-d doc]"
+    echo "  archy [filename]                    # Legacy: treat as update with filename"
+    echo ""
+    echo "Flags:"
+    echo "  -p, --project PATH    Git project path (default: current directory)"
+    echo "  -f, --folder PATH     Subfolder to focus on (optional)"
+    echo "  -d, --doc FILE        Documentation filename (default: arch.md)"
+    echo "  -n, --name NAME       Project name (default: auto-detect from folder)"
+    echo "  -h, --help            Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  archy fresh                              # Create arch.md in current dir"
+    echo "  archy fresh -f backend -d api.md         # Focus on backend/, output to api.md"
+    echo "  archy fresh -p /path/to/repo -n MyApp    # Different project with custom name"
+    echo "  archy update -f frontend                 # Update focusing on frontend/"
+    echo "  archy update -p ../other-repo            # Update different project"
+    echo ""
+    echo "Legacy compatibility:"
+    echo "  archy some-file.md                       # Treats as: archy update -d some-file.md"
+}
+
+# Main command dispatch
+CMD="${1:-help}"
+
+case "$CMD" in
+    "fresh"|"create"|"new"|"--fresh")
+        shift
+        parse_flags "fresh" "$@"
+        ;;
+    "update"|"--update")
+        shift
+        parse_flags "update" "$@"
+        ;;
+    "-h"|"--help"|"help")
+        show_help
+        ;;
+    *)
+        # Legacy mode: treat first arg as filename
+        if [[ "$CMD" =~ \.(md|txt|rst)$ ]] || [[ "$CMD" == *"arch"* ]]; then
+            echo "🔄 Updating architecture documentation (legacy mode)..."
+            echo "   Directory: $(pwd)"
+            echo "   File: $CMD"
+            exec "$ARCH_SCRIPT" . "" "$CMD"
+        else
+            echo "❌ Unknown command: $CMD"
+            echo ""
+            show_help
+            exit 1
+        fi
+        ;;
+esac
