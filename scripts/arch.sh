@@ -24,10 +24,16 @@ readonly TEMP_DIR_PREFIX="archy"
 # Supported AI backends
 readonly SUPPORTED_BACKENDS=("cursor-agent" "fabric")
 
-# File extensions to analyze for git changes
-readonly CODE_EXTENSIONS=(
-    "*.py" "*.ts" "*.js" "*.jsx" "*.tsx" 
-    "*.json" "*.yaml" "*.yml"
+# Files to exclude from analysis (lock files, build artifacts, noise)
+readonly EXCLUDED_PATTERNS=(
+    # Lock files
+    "package-lock.json" "yarn.lock" "pnpm-lock.yaml"
+    "Pipfile.lock" "poetry.lock" "Cargo.lock" 
+    "composer.lock" "Gemfile.lock" "go.sum"
+    
+    # Build artifacts & minified files
+    "*.min.js" "*.min.css" "*.bundle.js" "*.bundle.css"
+    "*.pyc" "*.class" "*.o" "*.so" "*.dll" "*.exe"
 )
 
 # System directories that should never be accessed (security)
@@ -421,26 +427,45 @@ setup_environment() {
 extract_git_changes() {
     local changes_file="$WORK_DIR/changes.diff"
     
-    # Send informational messages to stderr to avoid capture in command substitution
     warn "Analyzing git changes from ${DEFAULT_BRANCH}...HEAD..." >&2
     
-    # Build file extension filters for git diff
-    local extension_filters=()
-    for ext in "${CODE_EXTENSIONS[@]}"; do
-        extension_filters+=("${PATH_FILTER}$ext")
-    done
+    # Get all changed files
+    local changed_files="$WORK_DIR/changed_files.txt"
+    git diff --name-only "$DEFAULT_BRANCH...HEAD" > "$changed_files"
     
-    # Generate git diff with both stats and content
-    git diff --no-color --stat "$DEFAULT_BRANCH...HEAD" -- "${extension_filters[@]}" > "$changes_file"
-    echo "" >> "$changes_file"
-    git diff --no-color "$DEFAULT_BRANCH...HEAD" -- "${extension_filters[@]}" >> "$changes_file"
-    
-    # Verify we found changes
-    if [[ ! -s "$changes_file" ]]; then
-        error_exit "No changes found in current branch compared to $DEFAULT_BRANCH"
+    # Filter to our analysis target if needed
+    if [[ -n "$PATH_FILTER" ]]; then
+        grep "^$PATH_FILTER" "$changed_files" > "$changed_files.tmp" || : > "$changed_files.tmp"
+        mv "$changed_files.tmp" "$changed_files"
     fi
     
-    success "Found git changes to analyze" >&2
+    # Filter out excluded patterns
+    local filtered_files="$WORK_DIR/filtered_files.txt"
+    cp "$changed_files" "$filtered_files"
+    
+    local pattern
+    for pattern in "${EXCLUDED_PATTERNS[@]}"; do
+        # Remove files matching excluded patterns
+        grep -v "$pattern" "$filtered_files" > "$filtered_files.tmp" || : > "$filtered_files.tmp"
+        mv "$filtered_files.tmp" "$filtered_files"
+    done
+    
+    # Build file list for git diff
+    local file_list=()
+    while IFS= read -r file; do
+        [[ -n "$file" ]] && file_list+=("$file")
+    done < "$filtered_files"
+    
+    if [[ ${#file_list[@]} -eq 0 ]]; then
+        error_exit "No relevant changes found in current branch compared to $DEFAULT_BRANCH"
+    fi
+    
+    # Generate git diff for filtered files
+    git diff --no-color --stat "$DEFAULT_BRANCH...HEAD" -- "${file_list[@]}" > "$changes_file"
+    echo "" >> "$changes_file"
+    git diff --no-color "$DEFAULT_BRANCH...HEAD" -- "${file_list[@]}" >> "$changes_file"
+    
+    success "Found git changes to analyze (${#file_list[@]} files)" >&2
     echo "$changes_file"
 }
 
@@ -471,7 +496,25 @@ generate_fresh_architecture() {
     local pattern_file="$WORK_DIR/create_pattern.txt"
     cp "$CREATE_PATTERN_TEMPLATE" "$pattern_file"
 
-    # Create project analysis prompt
+    # Get all tracked files (respects .gitignore)
+    local all_files="$WORK_DIR/all_files.txt"
+    if [[ -n "$PATH_FILTER" ]]; then
+        git ls-files "$PATH_FILTER" > "$all_files"
+    else
+        git ls-files > "$all_files"
+    fi
+    
+    # Filter out excluded patterns
+    local filtered_files="$WORK_DIR/filtered_files.txt"
+    cp "$all_files" "$filtered_files"
+    
+    local pattern
+    for pattern in "${EXCLUDED_PATTERNS[@]}"; do
+        grep -v "$pattern" "$filtered_files" > "$filtered_files.tmp" || : > "$filtered_files.tmp"
+        mv "$filtered_files.tmp" "$filtered_files"
+    done
+    
+    # Create comprehensive project analysis prompt
     local input_file="$WORK_DIR/create_input.md"
     {
         echo "Create a comprehensive architecture design document for:"
@@ -481,6 +524,23 @@ generate_fresh_architecture() {
         if [[ -n "$SUBFOLDER" ]]; then
             echo "Subfolder Focus: $SUBFOLDER"
         fi
+        echo ""
+        
+        # Show directory structure
+        echo "Directory structure:"
+        echo "\`\`\`"
+        tree "$ANALYSIS_TARGET_ABS" -I 'node_modules|.git|__pycache__|dist|build|target' 2>/dev/null || \
+        find "$ANALYSIS_TARGET_ABS" -type d \( -name node_modules -o -name .git -o -name __pycache__ -o -name dist -o -name build \) -prune -o -type d -print | head -20
+        echo "\`\`\`"
+        echo ""
+        
+        # List all relevant files
+        local file_count
+        file_count=$(wc -l < "$filtered_files")
+        echo "Files to analyze ($file_count total):"
+        while IFS= read -r file; do
+            [[ -n "$file" ]] && echo "- $file"
+        done < "$filtered_files"
         echo ""
         echo "Analyze the codebase structure and create appropriate C4 diagrams and documentation."
     } > "$input_file"
