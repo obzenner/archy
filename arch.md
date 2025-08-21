@@ -1,4 +1,4 @@
-I'll fetch the latest from origin, then get the commit list and diff stats for your branch relative to origin/main to identify architecture-impacting changes.I'll get the commit list and diffs since origin/main to understand architecture-impacting changes.## BUSINESS POSTURE
+## BUSINESS POSTURE
 
 - Purpose: automate creation and updates of architecture design documents with C4 diagrams from local code and git diffs
 - Priorities: developer productivity, local-first workflow, reproducibility, fast feedback with progress, minimal setup
@@ -7,6 +7,7 @@ I'll fetch the latest from origin, then get the commit list and diff stats for y
 - [Updated] Local, versioned patterns only under patterns directory; remote fetch removed for determinism
 - [Updated] Consistent CLI via archy command and interactive wrappers for fresh and update flows
 - [Updated] Legacy pattern fetch scripts removed in favor of local patterns: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh deleted to eliminate remote sources and simplify the flow
+- [Updated] Patterns tightened to enforce strict C4 and Mermaid syntax rules; generation favors fail fast with explicit remediation guidance to reduce invalid diagram output
 
 Business risks:
 - Inaccurate or stale documentation if generation drifts from code or fails silently
@@ -15,6 +16,7 @@ Business risks:
 - Supply chain exposure from external CLIs and remote pattern sources
 - [Updated] Pattern updates require repo changes and reviews because remote fetch is removed
 - [Updated] Reduced supply chain risk by removing remote pattern retrieval and curl-based fetch paths
+- [Updated] Increased short-term friction from stricter pattern validation causing runs to fail on nonconforming diagrams; mitigated by clear fix instructions in patterns
 
 ## SECURITY POSTURE
 
@@ -29,13 +31,15 @@ security control: Make scripts executable with explicit chmod before run
 [Updated] security control: Path and filename validation for inputs and outputs in arch sh and archy  
 [Updated] security control: Temp directory isolation with automatic cleanup via traps  
 [Updated] security control: AI backend selection restricted to cursor agent or fabric with output normalization  
-[Updated] security control: Network egress narrowed to model provider only; remote pattern fetch binaries and scripts removed
+[Updated] security control: Network egress narrowed to model provider only; remote pattern fetch binaries and scripts removed  
+[Updated] security control: Patterns encode strict C4 and Mermaid constraints to reduce prompt injection, enforce deterministic diagram structure, and prevent invalid syntax from being committed
 
 accepted risk: External model API may receive prompts and summaries from local repo  
 accepted risk: Local scripts can modify repository files including documentation  
 accepted risk: Dependence on installed git, jq, curl, cursor agent versions  
 [Updated] accepted risk: Only file types covered by globs are analyzed during updates  
-[Updated] removed risk: Remote pattern fetch drift due to pinning gaps is no longer applicable
+[Updated] removed risk: Remote pattern fetch drift due to pinning gaps is no longer applicable  
+[Updated] accepted risk: Stricter validation may block document generation until issues are resolved; increases reliability but may slow first-time updates
 
 Recommended high-priority controls:
 - security control: Output path allowlist and filename normalization for generated artifacts
@@ -47,6 +51,7 @@ Recommended high-priority controls:
 - security control: Checksums or pinned commit ref for fetched patterns
 - security control: Configurable git diff base with repo default detection
 - [Updated] recommendation: Validate and document AI backend setup and selection defaults
+- [Updated] recommendation: Add pre-commit check to lint C4 Mermaid blocks against pattern rules to catch violations before commit
 
 Security requirements:
 - Least privilege file IO within project directories
@@ -56,6 +61,7 @@ Security requirements:
 - Clear errors and non-zero exit on partial failures
 - Compatibility with enterprise macOS controls and EDR
 - [Updated] Enforce temp isolation and cleanup for all intermediate artifacts
+- [Updated] Enforce strict C4 and Mermaid syntax in generated outputs to prevent malformed diagrams
 
 ## DESIGN
 
@@ -80,7 +86,8 @@ flowchart LR
 ```
 
 [Updated] Removed GitHub Pattern Repository and related link since patterns are now local and versioned in repository.  
-[Updated] Egress constrained to model provider only; no network calls for pattern retrieval.
+[Updated] Egress constrained to model provider only; no network calls for pattern retrieval.  
+[Updated] No topology changes from stricter patterns; behavior change is validation and guidance within local pattern content.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -130,7 +137,8 @@ flowchart TB
 [Updated] Added arch sh orchestrator, archy CLI, and CLI wrappers nodes and flows.  
 [Updated] Removed curl CLI and GitHub Pattern Source; patterns are read locally.  
 [Updated] Explicitly modeled jq CLI as part of normalization and parsing.  
-[Updated] Legacy fetch scripts removed: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh are no longer part of the system.
+[Updated] Legacy fetch scripts removed: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh are no longer part of the system.  
+[Updated] Patterns in Patterns_Library now encode strict C4 and Mermaid rules to guide Tools_Module and Arch_Orchestrator output normalization; no new containers added.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -139,7 +147,7 @@ flowchart TB
 | arch sh Orchestrator | Container | Unified bash orchestrator | Collect diffs, select backend, normalize outputs, validate paths, write docs | set -euo pipefail, path allowlist, temp isolation, timeouts |
 | archy CLI Command | Container | User-facing CLI entrypoint | Provide fresh update test subcommands; forward flags to orchestrator | Limited scope execution, clear error handling |
 | CLI Wrappers Create Update Test | Container | Interactive scripts in cli directory | Prompt users and delegate to orchestrator | Minimal logic, delegated permissions |
-| Patterns Markdown Local | Container | Local pattern files in repo | Provide prompt templates and formats | Versioned in VCS, integrity via reviews |
+| Patterns Markdown Local | Container | Local pattern files in repo | Provide prompt templates and formats; encode strict C4 and Mermaid rules; prescribe fail fast guidance | Versioned in VCS, integrity via reviews; reduces prompt injection surface via constrained outputs |
 | Cursor MCP Config Generator | Container | Optional setup script | Generate MCP client config | Writes to known locations only |
 | Git CLI | External Container | System git | Diff, path resolution | Read-only by default |
 | jq CLI | External Container | JSON processor | Normalize and extract results from backend outputs | Trusted source, version pinning recommended |
@@ -149,7 +157,8 @@ flowchart TB
 
 [Updated] Removed Shell Scripts Bash generic node in favor of explicit arch sh orchestrator.  
 [Updated] Removed curl CLI and GitHub Pattern Source rows due to local-only patterns.  
-[Updated] Removed legacy fetch scripts components aligned with deleted files.
+[Updated] Removed legacy fetch scripts components aligned with deleted files.  
+[Updated] Clarified Patterns Markdown Local responsibilities to include strict diagram constraints; no runtime dependency changes.
 
 ### C4 DEPLOYMENT
 
@@ -191,7 +200,8 @@ flowchart TB
 
 [Updated] Added archy CLI command and arch sh process; removed curl binary and GitHub cloud.  
 [Updated] Network egress limited to model provider via cursor agent binary.  
-[Updated] Removed legacy pattern fetch processes to align with local-only pattern sourcing.
+[Updated] Removed legacy pattern fetch processes to align with local-only pattern sourcing.  
+[Updated] No deployment topology changes from stricter patterns; constraints are documentation content in Repo_Directory.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -210,7 +220,8 @@ flowchart TB
 | Model Provider Cloud API | Service | Cloud LLM | Text generation | TLS, API keys |
 
 [Updated] Removed curl binary and GitHub cloud rows; no remote pattern retrieval in runtime.  
-[Updated] Eliminated fetch script binaries from deployment due to file deletions.
+[Updated] Eliminated fetch script binaries from deployment due to file deletions.  
+[Updated] Document content now encodes strict diagram constraints; no new binaries introduced.
 
 ## RISK ASSESSMENT
 
@@ -219,6 +230,7 @@ flowchart TB
 - [Updated] Risk: dependency on presence and configuration of AI backend cursor agent or fabric
 - [Updated] Risk: change-driven updates only consider file types in configured globs which may omit relevant config or uncommon languages
 - [Updated] Reduced risk: removal of remote pattern fetch reduces supply chain and drift exposure
+- [Updated] New risk: stricter pattern validation increases failure rate for nonconforming diagrams; mitigated by clearer remediation guidance and local iteration before commit
 
 ## QUESTIONS & ASSUMPTIONS
 
@@ -238,3 +250,4 @@ Assumptions:
 - Monorepo support via subfolder targeting; Python 3.10+ and macOS environment
 - [Updated] Primary execution path uses local patterns and archy CLI with arch sh orchestrator for both fresh and update flows
 - [Updated] Legacy fetch scripts removed; arch.sh and archy underwent readability refactors without changing external interfaces
+- [Updated] Patterns now encode strict C4 and Mermaid rules to standardize outputs; no new services or infrastructure were added
