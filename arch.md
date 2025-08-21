@@ -1,16 +1,18 @@
-Let me inspect the `arch-diagram-mcp-server` codebase structure and key files to derive the architecture and components. I'll search for project metadata, source modules, entrypoints, and references to frameworks or protocols.## BUSINESS POSTURE
+## BUSINESS POSTURE
 
 - Purpose: automate creation and updates of architecture design documents with C4 diagrams from local code and git diffs
 - Priorities: developer productivity, local-first workflow, reproducibility, fast feedback with progress, minimal setup
 - Scope: runs on developer machines, integrated with Cursor via MCP, orchestrates bash scripts and patterns to generate docs
 - Constraints: operates within repository boundaries, avoids long-lived processes, supports monorepos and subfolders
+- [Updated] Local, versioned patterns only under patterns directory; remote fetch removed for determinism
+- [Updated] Consistent CLI via archy command and interactive wrappers for fresh and update flows
 
 Business risks:
 - Inaccurate or stale documentation if generation drifts from code or fails silently
 - Unintended egress of sensitive repository context to external model providers
 - Destructive or misplaced file writes due to path misuse
 - Supply chain exposure from external CLIs and remote pattern sources
-
+- [Updated] Pattern updates require repo changes and reviews because remote fetch is removed
 
 ## SECURITY POSTURE
 
@@ -20,12 +22,17 @@ security control: Scripts use set -euo pipefail and explicit paths
 security control: Local MCP server only, no exposed network listener in default flow  
 security control: Minimal dependencies, Python 3.10+  
 security control: Stderr capture and structured parsing of outputs  
-security control: Make scripts executable with explicit chmod before run
+security control: Make scripts executable with explicit chmod before run  
+[Updated] security control: Local, versioned patterns only; no runtime fetch from remote sources  
+[Updated] security control: Path and filename validation for inputs and outputs in arch sh and archy  
+[Updated] security control: Temp directory isolation with automatic cleanup via traps  
+[Updated] security control: AI backend selection restricted to cursor agent or fabric with output normalization
 
 accepted risk: External model API may receive prompts and summaries from local repo  
 accepted risk: Local scripts can modify repository files including documentation  
 accepted risk: Dependence on installed git, jq, curl, cursor agent versions  
-accepted risk: Remote pattern fetch without strict pinning may introduce drift
+[Updated] accepted risk: Only file types covered by globs are analyzed during updates  
+[Updated] removed risk: Remote pattern fetch drift due to pinning gaps is no longer applicable
 
 Recommended high-priority controls:
 - security control: Output path allowlist and filename normalization for generated artifacts
@@ -36,6 +43,7 @@ Recommended high-priority controls:
 - security control: Append-only audit log of tool invocations and file writes
 - security control: Checksums or pinned commit ref for fetched patterns
 - security control: Configurable git diff base with repo default detection
+- [Updated] recommendation: Validate and document AI backend setup and selection defaults
 
 Security requirements:
 - Least privilege file IO within project directories
@@ -44,7 +52,7 @@ Security requirements:
 - No PII or secrets in prompts; redact sensitive paths and code
 - Clear errors and non-zero exit on partial failures
 - Compatibility with enterprise macOS controls and EDR
-
+- [Updated] Enforce temp isolation and cleanup for all intermediate artifacts
 
 ## DESIGN
 
@@ -58,7 +66,6 @@ flowchart LR
     Local_Git_Repo[Local Git Repository]
     Project_FS[Project Filesystem]
     Cursor_Agent_CLI[Cursor Agent CLI]
-    GitHub_Patterns[GitHub Pattern Repository]
     Model_Provider_API[Model Provider API]
 
     Developer --> Cursor_IDE
@@ -67,8 +74,9 @@ flowchart LR
     Arch_MCP_Server --> Local_Git_Repo
     Arch_MCP_Server --> Cursor_Agent_CLI
     Cursor_Agent_CLI --> Model_Provider_API
-    Arch_MCP_Server --> GitHub_Patterns
 ```
+
+[Updated] Removed GitHub Pattern Repository and related link since patterns are now local and versioned in repository.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
@@ -78,9 +86,9 @@ flowchart LR
 | Local Git Repository | External System | Repo on disk | Provides code and diffs | Read-mostly, controlled write of docs |
 | Project Filesystem | External System | Project directories and tmp | Stores generated docs and intermediates | Path allowlist, atomic writes |
 | Cursor Agent CLI | External System | CLI to model provider | Generates document content from prompts | Egress policy, key isolation |
-| GitHub Pattern Repository | External System | Source of markdown patterns | Supplies prompt templates | HTTPS, pinned ref or checksums |
 | Model Provider API | External System | LLM endpoint | Text generation | TLS, token-based auth, rate limits |
 
+[Updated] Removed GitHub Pattern Repository row due to deprecation of remote fetch.
 
 ### C4 CONTAINER
 
@@ -88,48 +96,54 @@ flowchart LR
 flowchart TB
     Cursor_Client[Cursor IDE MCP Client]
     MCP_Server[FastMCP Server Python]
-    Tools_Module[Tool Handlers Update Create Fetch]
-    Script_Runner[Async Script Runner Progress]
-    Shell_Scripts[Shell Scripts Bash]
-    Patterns_Library[Patterns Markdown]
+    Tools_Module[Tool Handlers Fresh Update Test]
+    Arch_Orchestrator[arch sh Orchestrator]
+    Archy_CLI[archy CLI Command]
+    CLI_Wrappers[CLI Wrappers Create Update Test]
+    Patterns_Library[Patterns Markdown Local]
     Config_Generator[Cursor MCP Config Generator]
     Git_CLI[Git CLI]
-    Curl_CLI[curl CLI]
+    jq_CLI[jq CLI]
     Cursor_Agent[Cursor Agent CLI]
     File_System[Local Filesystem]
     Model_API[Model Provider API]
-    GitHub_Source[GitHub Pattern Source]
 
     Cursor_Client --> MCP_Server
     MCP_Server --> Tools_Module
-    Tools_Module --> Script_Runner
+    Tools_Module --> Arch_Orchestrator
     Tools_Module --> File_System
-    Script_Runner --> Shell_Scripts
-    Shell_Scripts --> Git_CLI
-    Shell_Scripts --> Curl_CLI
-    Shell_Scripts --> File_System
-    Shell_Scripts --> Cursor_Agent
-    Shell_Scripts --> Patterns_Library
-    Shell_Scripts --> GitHub_Source
+    CLI_Wrappers --> Arch_Orchestrator
+    Archy_CLI --> Arch_Orchestrator
+    Arch_Orchestrator --> Git_CLI
+    Arch_Orchestrator --> jq_CLI
+    Arch_Orchestrator --> Cursor_Agent
+    Arch_Orchestrator --> Patterns_Library
+    Arch_Orchestrator --> File_System
     Config_Generator --> File_System
     Cursor_Agent --> Model_API
 ```
 
+[Updated] Added arch sh orchestrator, archy CLI, and CLI wrappers nodes and flows.  
+[Updated] Removed curl CLI and GitHub Pattern Source; patterns are read locally.  
+[Updated] Explicitly modeled jq CLI as part of normalization and parsing.
+
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
 | FastMCP Server Python | Container | Python process using fastmcp | Runs MCP runtime, routes tool calls | Structured logs, no stdin to child processes |
-| Tool Handlers Update Create Fetch | Container | Async tool functions | Validate args, orchestrate flows, report progress | Input validation, bounded execution |
-| Async Script Runner Progress | Container | Helper for subprocess with progress | Execute scripts, handle timeout, parse output | Timeout, stderr capture, cancellation |
-| Shell Scripts Bash | Container | arch sh, fetch fabric pattern sh | Interact with git, cursor agent, jq, curl | set -euo pipefail, explicit binary paths |
-| Patterns Markdown | Container | Local pattern files | Prompt templates and formats | Integrity checks, versioning |
+| Tool Handlers Fresh Update Test | Container | Async tool functions | Validate args, orchestrate fresh and update flows, report progress | Input validation, bounded execution |
+| arch sh Orchestrator | Container | Unified bash orchestrator | Collect diffs, select backend, normalize outputs, validate paths, write docs | set -euo pipefail, path allowlist, temp isolation, timeouts |
+| archy CLI Command | Container | User-facing CLI entrypoint | Provide fresh update test subcommands; forward flags to orchestrator | Limited scope execution, clear error handling |
+| CLI Wrappers Create Update Test | Container | Interactive scripts in cli directory | Prompt users and delegate to orchestrator | Minimal logic, delegated permissions |
+| Patterns Markdown Local | Container | Local pattern files in repo | Provide prompt templates and formats | Versioned in VCS, integrity via reviews |
 | Cursor MCP Config Generator | Container | Optional setup script | Generate MCP client config | Writes to known locations only |
 | Git CLI | External Container | System git | Diff, path resolution | Read-only by default |
-| curl CLI | External Container | HTTP client | Fetch remote patterns | HTTPS, pinned refs |
-| Cursor Agent CLI | External Container | LLM client | Generate content | Egress control, API key isolation |
+| jq CLI | External Container | JSON processor | Normalize and extract results from backend outputs | Trusted source, version pinning recommended |
+| Cursor Agent CLI | External Container | LLM client | Generate content via model provider | Egress control, API key isolation |
 | Local Filesystem | External Container | Repo and tmp dirs | Persist inputs and outputs | Atomic writes, allowlist paths |
 | Model Provider API | External Container | Cloud LLM | Text generation | TLS, auth, quotas |
-| GitHub Pattern Source | External Container | Remote repository | Pattern retrieval | TLS, pin commit or checksum |
 
+[Updated] Removed Shell Scripts Bash generic node in favor of explicit arch sh orchestrator.  
+[Updated] Removed curl CLI and GitHub Pattern Source rows due to local-only patterns.
 
 ### C4 DEPLOYMENT
 
@@ -138,60 +152,64 @@ flowchart TB
     Dev_Machine[Developer Laptop macOS]
     Cursor_IDE_Process[Cursor IDE Process]
     MCP_Server_Process[Arch MCP Server Python Process]
+    Archy_Command[archy CLI Command]
+    Arch_Orchestrator_Process[arch sh Process]
     Git_Binary[Git Binary]
     Cursor_Agent_Binary[Cursor Agent Binary]
     jq_Binary[jq Binary]
-    Curl_Binary[curl Binary]
     Bash_Shell[Bash Shell]
     Repo_Directory[Project Repository Directory]
     Tmp_Directory[tmp Working Directory]
     Arch_File[Architecture Document File]
     Cloud_Model_API[Model Provider Cloud API]
-    GitHub_Cloud[GitHub Cloud]
 
     Dev_Machine --> Cursor_IDE_Process
     Dev_Machine --> MCP_Server_Process
+    Dev_Machine --> Archy_Command
     Dev_Machine --> Git_Binary
     Dev_Machine --> Cursor_Agent_Binary
     Dev_Machine --> jq_Binary
-    Dev_Machine --> Curl_Binary
     Dev_Machine --> Bash_Shell
     MCP_Server_Process --> Repo_Directory
     MCP_Server_Process --> Tmp_Directory
     MCP_Server_Process --> Bash_Shell
-    Bash_Shell --> Git_Binary
-    Bash_Shell --> Cursor_Agent_Binary
-    Bash_Shell --> jq_Binary
-    Bash_Shell --> Curl_Binary
-    Bash_Shell --> Repo_Directory
+    Archy_Command --> Bash_Shell
+    Bash_Shell --> Arch_Orchestrator_Process
+    Arch_Orchestrator_Process --> Git_Binary
+    Arch_Orchestrator_Process --> Cursor_Agent_Binary
+    Arch_Orchestrator_Process --> jq_Binary
+    Arch_Orchestrator_Process --> Repo_Directory
     Repo_Directory --> Arch_File
     Cursor_Agent_Binary --> Cloud_Model_API
-    Git_Binary --> GitHub_Cloud
-    Curl_Binary --> GitHub_Cloud
 ```
+
+[Updated] Added archy CLI command and arch sh process; removed curl binary and GitHub cloud.  
+[Updated] Network egress limited to model provider via cursor agent binary.
 
 | Name | Type | Description | Responsibilities | Security controls |
 |---|---|---|---|---|
 | Developer Laptop macOS | Node | Local workstation | Host IDE, server, CLIs | OS hardening, EDR |
 | Cursor IDE Process | Process | IDE with MCP client | User interface and tool runner | Sandboxing, consent |
 | Arch MCP Server Python Process | Process | FastMCP server | Orchestrate tools and scripts | Limited privileges, resource limits |
+| archy CLI Command | Runtime | Local shell command | Entry for users to run fresh update test | Minimal privileges, clear exit codes |
+| arch sh Process | Process | Orchestrator script process | Diff, prompt assembly, backend calls, output writing | set -euo pipefail, path checks, temp isolation |
 | Git Binary | Runtime | System git | Diffs and repo introspection | Read-only operations |
 | Cursor Agent Binary | Runtime | External CLI | LLM interaction | Network policy, token isolation |
-| jq Binary | Runtime | JSON processor | Parse responses | Trusted source |
-| curl Binary | Runtime | HTTP client | Fetch patterns | TLS, pin refs |
+| jq Binary | Runtime | JSON processor | Normalize backend outputs | Trusted source |
 | Bash Shell | Runtime | Shell environment | Execute scripts | set -euo pipefail |
 | Project Repository Directory | Storage | Source code and docs | Inputs and outputs | Access controls |
 | tmp Working Directory | Storage | Ephemeral temp | Prompts and responses | Cleanup policy |
 | Architecture Document File | Artifact | Generated doc | Final deliverable | Atomic writes |
 | Model Provider Cloud API | Service | Cloud LLM | Text generation | TLS, API keys |
-| GitHub Cloud | Service | Remote git hosting | Pattern retrieval | HTTPS, auth if private |
 
+[Updated] Removed curl binary and GitHub cloud rows; no remote pattern retrieval in runtime.
 
 ## RISK ASSESSMENT
 
 - Critical business processes to protect: generating initial design documents; updating architecture docs from git diffs; maintaining consistent patterns; producing accurate C4 diagrams with progress and error signaling
 - Data to protect and sensitivity: source code and diffs (high, proprietary); architecture documents (medium, internal); prompts and generated outputs (medium, may summarize sensitive code); model provider credentials (high)
-
+- [Updated] Risk: dependency on presence and configuration of AI backend cursor agent or fabric
+- [Updated] Risk: change-driven updates only consider file types in configured globs which may omit relevant config or uncommon languages
 
 ## QUESTIONS & ASSUMPTIONS
 
@@ -201,6 +219,7 @@ Questions:
 - Should write operations be gated by dry run and explicit confirmation or PR gates?
 - What is the default base for diffs (main, master, trunk) and should it be configurable?
 - Must remote pattern fetch be pinned to a commit or use checksums, or should we rely on local patterns only?
+- [Updated] Should the file-type globs for change analysis be expanded to include additional config formats in this repository?
 
 Assumptions:
 - Runs locally with no exposed network service beyond MCP client connection
@@ -208,3 +227,4 @@ Assumptions:
 - Generated docs are intended to be committed to the repository
 - Patterns are primarily sourced locally; remote fetch is optional and pinned when enabled
 - Monorepo support via subfolder targeting; Python 3.10+ and macOS environment
+- [Updated] Primary execution path uses local patterns and archy CLI with arch sh orchestrator for both fresh and update flows

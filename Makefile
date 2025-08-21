@@ -13,7 +13,7 @@ help:
 	@echo "CLI Tools (interactive):"
 	@echo "  make create-arch      - Create architecture doc (with prompts)"
 	@echo "  make update-arch      - Update architecture doc (with prompts)"
-	@echo "  make fetch-pattern    - Fetch Fabric pattern (with prompts)"
+
 	@echo "  make examples         - Show usage examples and workflows"
 	@echo "  make test-ai          - Test AI backend with simple message"
 	@echo ""
@@ -68,9 +68,7 @@ create-arch:
 update-arch:
 	@./cli/update_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
-.PHONY: fetch-pattern
-fetch-pattern:
-	@./cli/fetch_pattern.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+
 
 .PHONY: examples
 examples:
