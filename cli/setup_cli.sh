@@ -1,85 +1,199 @@
 #!/bin/bash
 
-# Interactive CLI setup script
+# Interactive CLI setup script - Install 'archy' command globally
 # Called by: make setup-cli
 
 set -euo pipefail
 
+#================================================================
+# CONFIGURATION
+#================================================================
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly CLI_COMMAND_NAME="archy"
+readonly DEFAULT_CHOICE="1"
+
+# Supported installation locations
+readonly USER_LOCAL_BIN="$HOME/.local/bin"
+readonly SYSTEM_BIN="/usr/local/bin"
+
+# Installation choice options
+readonly CHOICE_USER_LOCAL="1"
+readonly CHOICE_SYSTEM_WIDE="2" 
+readonly CHOICE_CUSTOM="3"
+
+#================================================================
+# GLOBAL VARIABLES
+#================================================================
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[0;33m'
+readonly BLUE='\033[0;34m'
+readonly MAGENTA='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly NC='\033[0m' # No Color
 
-echo -e "${CYAN}Archy CLI Setup${NC}"
-echo "=================="
-echo ""
-echo "This will install 'archy' command globally on your system."
-echo ""
-echo "Install locations:"
-echo "  1) ~/.local/bin/archy        (recommended - user only)"
-echo "  2) /usr/local/bin/archy      (system-wide, requires sudo)"
-echo "  3) Custom location"
-echo ""
+# Installation parameters (set during execution)
+CHOSEN_INSTALL_DIR=""
+PROJECT_ROOT_DIR=""
 
-read -p "Choose [1], 2, or 3: " CHOICE
-CHOICE=${CHOICE:-1}
+#================================================================
+# UTILITY FUNCTIONS
+#================================================================
 
-case "$CHOICE" in
-    "1")
-        INSTALL_DIR="$HOME/.local/bin"
-        echo "Installing to: $INSTALL_DIR"
-        ;;
-    "2")
-        INSTALL_DIR="/usr/local/bin"
-        echo "Installing to: $INSTALL_DIR (will prompt for sudo)"
-        ;;
-    "3")
-        read -p "Enter custom path: " INSTALL_DIR
-        echo "Installing to: $INSTALL_DIR"
-        ;;
-    *)
-        echo "Invalid choice, using default: ~/.local/bin"
-        INSTALL_DIR="$HOME/.local/bin"
-        ;;
-esac
+# Print error message and exit
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    
+    echo -e "${RED}ERROR: $message${NC}" >&2
+    exit "$exit_code"
+}
 
-echo ""
-echo -e "${CYAN}Setting up installation...${NC}"
+# Print informational message
+info() {
+    local message="$1"
+    echo -e "${CYAN}$message${NC}"
+}
 
-# Get the project root directory (assuming this script is in cli/)
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Print success message
+success() {
+    local message="$1"
+    echo -e "${GREEN}$message${NC}"
+}
 
-echo "Setting executable permissions on scripts..."
-chmod +x "$PROJECT_DIR/scripts/"*.sh "$PROJECT_DIR/scripts/archy" "$PROJECT_DIR/cli/"*.sh
+# Print warning message
+warn() {
+    local message="$1"
+    echo -e "${YELLOW}$message${NC}"
+}
 
-mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
+#================================================================
+# INSTALLATION SETUP FUNCTIONS
+#================================================================
 
-if [ "$INSTALL_DIR" = "/usr/local/bin" ]; then
-    sudo ln -sf "$PROJECT_DIR/scripts/archy" "$INSTALL_DIR/archy"
-else
-    ln -sf "$PROJECT_DIR/scripts/archy" "$INSTALL_DIR/archy"
-fi
-
-echo -e "${GREEN}archy installed to $INSTALL_DIR/archy${NC}"
-echo ""
-
-if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
-    echo -e "${YELLOW}Add $INSTALL_DIR to your PATH:${NC}"
-    if [ "$INSTALL_DIR" = "$HOME/.local/bin" ]; then
-        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
-    else
-        echo "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc"
-    fi
-    echo "  source ~/.zshrc"
+# Display installation header and options
+show_installation_options() {
+    info "Archy CLI Setup"
+    echo "=================="
     echo ""
-fi
+    echo "This will install '$CLI_COMMAND_NAME' command globally on your system."
+    echo ""
+    echo "Install locations:"
+    echo "  $CHOICE_USER_LOCAL) $USER_LOCAL_BIN/$CLI_COMMAND_NAME        (recommended - user only)"
+    echo "  $CHOICE_SYSTEM_WIDE) $SYSTEM_BIN/$CLI_COMMAND_NAME      (system-wide, requires sudo)"
+    echo "  $CHOICE_CUSTOM) Custom location"
+    echo ""
+}
 
-echo -e "${GREEN}Setup complete! Usage:${NC}"
-echo "  archy fresh    - Create fresh architecture doc"
-echo "  archy update   - Update from git changes"
-echo "  archy          - Default: update mode"
-echo "  archy --help   - Show help"
+# Get user's installation choice
+get_installation_choice() {
+    local user_choice
+    read -p "Choose [$DEFAULT_CHOICE], $CHOICE_SYSTEM_WIDE, or $CHOICE_CUSTOM: " user_choice
+    user_choice=${user_choice:-$DEFAULT_CHOICE}
+    
+    case "$user_choice" in
+        "$CHOICE_USER_LOCAL")
+            CHOSEN_INSTALL_DIR="$USER_LOCAL_BIN"
+            echo "Installing to: $CHOSEN_INSTALL_DIR"
+            ;;
+        "$CHOICE_SYSTEM_WIDE")
+            CHOSEN_INSTALL_DIR="$SYSTEM_BIN"
+            echo "Installing to: $CHOSEN_INSTALL_DIR (will prompt for sudo)"
+            ;;
+        "$CHOICE_CUSTOM")
+            read -p "Enter custom path: " CHOSEN_INSTALL_DIR
+            echo "Installing to: $CHOSEN_INSTALL_DIR"
+            ;;
+        *)
+            warn "Invalid choice, using default: $USER_LOCAL_BIN"
+            CHOSEN_INSTALL_DIR="$USER_LOCAL_BIN"
+            ;;
+    esac
+}
+
+# Set up project environment and permissions
+setup_project_environment() {
+    # Get the project root directory (assuming this script is in cli/)
+    PROJECT_ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+    
+    info "Setting up installation..."
+    echo "Setting executable permissions on scripts..."
+    
+    # Set executable permissions on all necessary scripts
+    chmod +x "$PROJECT_ROOT_DIR/scripts/"*.sh \
+             "$PROJECT_ROOT_DIR/scripts/$CLI_COMMAND_NAME" \
+             "$PROJECT_ROOT_DIR/cli/"*.sh
+}
+
+# Create installation directory with appropriate permissions
+create_install_directory() {
+    # Try to create directory normally first, then with sudo if needed
+    if ! mkdir -p "$CHOSEN_INSTALL_DIR" 2>/dev/null; then
+        info "Creating directory requires elevated permissions..."
+        sudo mkdir -p "$CHOSEN_INSTALL_DIR" || error_exit "Failed to create installation directory: $CHOSEN_INSTALL_DIR"
+    fi
+}
+
+# Install the CLI command by creating symlink
+install_cli_command() {
+    local source_path="$PROJECT_ROOT_DIR/scripts/$CLI_COMMAND_NAME"
+    local target_path="$CHOSEN_INSTALL_DIR/$CLI_COMMAND_NAME"
+    
+    # Use sudo for system-wide installation
+    if [[ "$CHOSEN_INSTALL_DIR" == "$SYSTEM_BIN" ]]; then
+        sudo ln -sf "$source_path" "$target_path" || error_exit "Failed to create symlink with sudo"
+    else
+        ln -sf "$source_path" "$target_path" || error_exit "Failed to create symlink"
+    fi
+    
+    success "$CLI_COMMAND_NAME installed to $target_path"
+}
+
+# Check if installation directory is in PATH and provide guidance
+check_path_configuration() {
+    echo ""
+    
+    if ! echo "$PATH" | grep -q "$CHOSEN_INSTALL_DIR"; then
+        warn "Add $CHOSEN_INSTALL_DIR to your PATH:"
+        
+        if [[ "$CHOSEN_INSTALL_DIR" == "$USER_LOCAL_BIN" ]]; then
+            echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
+        else
+            echo "  echo 'export PATH=\"$CHOSEN_INSTALL_DIR:\$PATH\"' >> ~/.zshrc"
+        fi
+        echo "  source ~/.zshrc"
+        echo ""
+    fi
+}
+
+# Display installation success message and usage
+show_completion_message() {
+    success "Setup complete! Usage:"
+    echo "  $CLI_COMMAND_NAME fresh    - Create fresh architecture doc"
+    echo "  $CLI_COMMAND_NAME update   - Update from git changes"
+    echo "  $CLI_COMMAND_NAME          - Default: update mode"
+    echo "  $CLI_COMMAND_NAME --help   - Show help"
+}
+
+#================================================================
+# MAIN EXECUTION FUNCTION
+#================================================================
+
+# Main installation orchestration function
+main() {
+    show_installation_options
+    get_installation_choice
+    setup_project_environment
+    create_install_directory
+    install_cli_command
+    check_path_configuration
+    show_completion_message
+}
+
+#================================================================
+# SCRIPT ENTRY POINT
+#================================================================
+
+# Execute main installation process
+main "$@"

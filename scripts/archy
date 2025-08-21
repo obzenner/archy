@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# archy: Architecture documentation generator
+# archy: Architecture documentation generator CLI wrapper
 # Usage: 
 #   archy fresh [-p project] [-f folder] [-d doc] [-n name] [-t tool]   - Create fresh architecture doc
 #   archy update [-p project] [-f folder] [-d doc] [-t tool]           - Update from git changes
@@ -8,72 +8,169 @@
 
 set -euo pipefail
 
-# Find the actual arch.sh script (resolve symlinks)
-if [ -L "$0" ]; then
-    # Follow symlink to get actual script location
-    REAL_SCRIPT="$(readlink "$0")"
-    if [[ "$REAL_SCRIPT" = /* ]]; then
-        # Absolute path
-        SCRIPT_DIR="$(dirname "$REAL_SCRIPT")"
+#================================================================
+# CONFIGURATION
+#================================================================
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly DEFAULT_ARCH_FILENAME="arch.md"
+readonly DEFAULT_PROJECT_PATH="."
+
+# Supported AI backends
+readonly SUPPORTED_BACKENDS=("cursor-agent" "fabric" "cursor")
+
+# Command aliases for different modes
+readonly FRESH_COMMAND_ALIASES=("fresh" "create" "new" "--fresh")
+readonly UPDATE_COMMAND_ALIASES=("update" "--update")
+readonly TEST_COMMAND_ALIASES=("test" "--test")
+readonly HELP_COMMAND_ALIASES=("-h" "--help" "help")
+
+#================================================================
+# GLOBAL VARIABLES
+#================================================================
+# Script and path resolution (set in resolve_script_location)
+SCRIPT_DIR=""
+ARCH_SCRIPT_PATH=""
+
+# Command execution parameters (set in parse_command_flags)
+COMMAND_MODE=""
+PROJECT_PATH=""
+SUBFOLDER=""
+ARCH_FILENAME=""
+PROJECT_NAME=""
+AI_BACKEND=""
+
+#================================================================
+# UTILITY FUNCTIONS
+#================================================================
+
+# Print error message and exit
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    
+    echo "❌ ERROR: $message" >&2
+    exit "$exit_code"
+}
+
+# Print informational message
+info() {
+    local message="$1"
+    echo "ℹ️  $message"
+}
+
+# Print success message
+success() {
+    local message="$1"
+    echo "✅ $message"
+}
+
+# Print command execution header
+print_command_header() {
+    local mode="$1"
+    local icon="$2"
+    
+    echo "$icon $mode architecture documentation..."
+    echo "   Project: ${PROJECT_PATH:-$DEFAULT_PROJECT_PATH}"
+    echo "   Folder: ${SUBFOLDER:-"(root)"}"
+    echo "   File: ${ARCH_FILENAME:-$DEFAULT_ARCH_FILENAME}"
+    echo "   AI Backend: ${AI_BACKEND:-"${ARCHY_AI_BACKEND:-cursor-agent}"}"
+    
+    if [[ -n "$PROJECT_NAME" ]]; then
+        echo "   Name: $PROJECT_NAME"
     else
-        # Relative path
-        SCRIPT_DIR="$(cd "$(dirname "$0")" && cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+        echo "   Name: (auto-detect)"
     fi
-else
-    # Not a symlink
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-fi
-ARCH_SCRIPT="$SCRIPT_DIR/arch.sh"
+}
 
-if [ ! -f "$ARCH_SCRIPT" ]; then
-    echo "❌ Cannot find arch.sh script."
-    exit 1
-fi
+#================================================================
+# SCRIPT LOCATION AND SETUP FUNCTIONS
+#================================================================
 
-# Security Functions (lightweight versions)
-validate_path_basic() {
+# Resolve symlinks to find the actual arch.sh script location
+resolve_script_location() {
+    local script_path="$0"
+    
+    # Handle symlink resolution to find the real arch.sh location
+    if [[ -L "$script_path" ]]; then
+        local real_script
+        real_script="$(readlink "$script_path")"
+        
+        if [[ "$real_script" = /* ]]; then
+            # Absolute path
+            SCRIPT_DIR="$(dirname "$real_script")"
+        else
+            # Relative path - resolve relative to the symlink location
+            SCRIPT_DIR="$(cd "$(dirname "$script_path")" && cd "$(dirname "$real_script")" && pwd)"
+        fi
+    else
+        # Not a symlink - use directory of current script
+        SCRIPT_DIR="$(cd "$(dirname "$script_path")" && pwd)"
+    fi
+    
+    # Construct path to the main arch.sh script
+    ARCH_SCRIPT_PATH="$SCRIPT_DIR/arch.sh"
+    
+    # Verify the arch.sh script exists
+    if [[ ! -f "$ARCH_SCRIPT_PATH" ]]; then
+        error_exit "Cannot find arch.sh script at: $ARCH_SCRIPT_PATH"
+    fi
+}
+
+#================================================================
+# SECURITY VALIDATION FUNCTIONS
+#================================================================
+
+# Basic path traversal protection for user inputs
+validate_path_security() {
     local path="$1"
-    # Check for directory traversal attempts
+    
+    # Prevent directory traversal attacks (e.g., ../../../etc/passwd)
     if [[ "$path" =~ \.\./|\.\.\\ ]] || [[ "$path" =~ /\.\./|/\.\.\\ ]]; then
-        echo "❌ ERROR: Path traversal detected: $path" >&2
-        exit 1
+        error_exit "Path traversal detected: $path"
     fi
 }
 
-validate_filename_basic() {
+# Validate filename contains only safe characters
+validate_filename_security() {
     local filename="$1"
-    # Only allow safe filename characters
+    
+    # Only allow alphanumeric characters, dots, underscores, and hyphens
     if [[ ! "$filename" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-        echo "❌ ERROR: Invalid characters in filename: $filename" >&2
-        exit 1
+        error_exit "Invalid characters in filename: $filename"
     fi
 }
 
-validate_backend() {
+# Validate AI backend is supported
+validate_ai_backend() {
     local backend="$1"
-    case "$backend" in
-        "cursor-agent"|"fabric"|"cursor") ;;
-        *)
-            echo "❌ ERROR: Invalid AI backend '$backend'. Supported: cursor-agent, fabric" >&2
-            exit 1
-            ;;
-    esac
+    
+    local supported_backend
+    for supported_backend in "${SUPPORTED_BACKENDS[@]}"; do
+        if [[ "$backend" == "$supported_backend" ]]; then
+            return 0
+        fi
+    done
+    
+    error_exit "Invalid AI backend '$backend'. Supported: ${SUPPORTED_BACKENDS[*]}"
 }
 
-# Parse command and flags
+#================================================================
+# COMMAND FLAG PARSING FUNCTIONS
+#================================================================
 
-parse_flags() {
+# Parse command line flags for fresh/update modes
+parse_command_flags() {
     local mode="$1"
     shift
     
-    # Default values
-    PROJECT_PATH="."
+    # Set defaults
+    PROJECT_PATH="$DEFAULT_PROJECT_PATH"
     SUBFOLDER=""
-    ARCH_FILE="arch.md"
+    ARCH_FILENAME="$DEFAULT_ARCH_FILENAME"
     PROJECT_NAME=""
-    AI_TOOL=""
+    AI_BACKEND=""
     
-    # Parse flags
+    # Parse command line flags
     while [[ $# -gt 0 ]]; do
         case $1 in
             -p|--project)
@@ -85,7 +182,7 @@ parse_flags() {
                 shift 2
                 ;;
             -d|--doc)
-                ARCH_FILE="$2"
+                ARCH_FILENAME="$2"
                 shift 2
                 ;;
             -n|--name)
@@ -93,67 +190,89 @@ parse_flags() {
                 shift 2
                 ;;
             -t|--tool)
-                AI_TOOL="$2"
+                AI_BACKEND="$2"
                 shift 2
                 ;;
             -h|--help)
-                show_help
+                show_help_message
                 exit 0
                 ;;
             *)
-                echo "❌ Unknown flag: $1"
-                show_help
-                exit 1
+                error_exit "Unknown flag: $1. Use -h for help."
                 ;;
         esac
     done
     
-    # Security validations
-    validate_path_basic "$PROJECT_PATH"
-    if [ -n "$SUBFOLDER" ]; then
-        validate_path_basic "$SUBFOLDER"
-    fi
-    validate_filename_basic "$ARCH_FILE"
-    if [ -n "$AI_TOOL" ]; then
-        validate_backend "$AI_TOOL"
-        export ARCHY_AI_BACKEND="$AI_TOOL"
+    # Validate all user inputs for security
+    validate_all_command_inputs
+    
+    # Set AI backend environment variable if specified
+    if [[ -n "$AI_BACKEND" ]]; then
+        export ARCHY_AI_BACKEND="$AI_BACKEND"
     fi
     
-    # Execute the command
-    if [ "$mode" = "fresh" ]; then
-        echo "🏗️  Creating fresh architecture documentation..."
-        echo "   Project: $PROJECT_PATH"
-        echo "   Folder: ${SUBFOLDER:-"(root)"}"
-        echo "   Output: $ARCH_FILE"
-        echo "   Name: ${PROJECT_NAME:-"(auto-detect)"}"
-        echo "   AI Backend: ${AI_TOOL:-"${ARCHY_AI_BACKEND:-cursor-agent}"}"
-        
-        if [ -n "$PROJECT_NAME" ]; then
-            exec "$ARCH_SCRIPT" --fresh "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE" "$PROJECT_NAME"
-        else
-            exec "$ARCH_SCRIPT" --fresh "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE"
-        fi
-    else
-        echo "🔄 Updating architecture documentation..."
-        echo "   Project: $PROJECT_PATH"
-        echo "   Folder: ${SUBFOLDER:-"(root)"}"
-        echo "   File: $ARCH_FILE"
-        echo "   AI Backend: ${AI_TOOL:-"${ARCHY_AI_BACKEND:-cursor-agent}"}"
-        
-        exec "$ARCH_SCRIPT" "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE"
+    # Execute the appropriate command
+    execute_architecture_command "$mode"
+}
+
+# Validate all command inputs for security and correctness
+validate_all_command_inputs() {
+    validate_path_security "$PROJECT_PATH"
+    
+    if [[ -n "$SUBFOLDER" ]]; then
+        validate_path_security "$SUBFOLDER"
+    fi
+    
+    validate_filename_security "$ARCH_FILENAME"
+    
+    if [[ -n "$AI_BACKEND" ]]; then
+        validate_ai_backend "$AI_BACKEND"
     fi
 }
 
-# Test AI backend function with provider selection
-test_ai_backend() {
-    local provider=""
+# Execute the architecture generation command with the parsed parameters
+execute_architecture_command() {
+    local mode="$1"
+    
+    if [[ "$mode" == "fresh" ]]; then
+        print_command_header "Creating" "🏗️ "
+        execute_fresh_mode_command
+    else
+        print_command_header "Updating" "🔄"
+        execute_update_mode_command
+    fi
+}
+
+# Execute fresh mode architecture generation
+execute_fresh_mode_command() {
+    local cmd_args=("$ARCH_SCRIPT_PATH" "--fresh" "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILENAME")
+    
+    if [[ -n "$PROJECT_NAME" ]]; then
+        cmd_args+=("$PROJECT_NAME")
+    fi
+    
+    exec "${cmd_args[@]}"
+}
+
+# Execute update mode architecture generation
+execute_update_mode_command() {
+    exec "$ARCH_SCRIPT_PATH" "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILENAME"
+}
+
+#================================================================
+# AI BACKEND TESTING FUNCTIONS
+#================================================================
+
+# Test AI backend functionality with optional custom message
+test_ai_backend_connectivity() {
+    local backend_to_test=""
     local test_message=""
     
-    # Parse flags for test command
+    # Parse test command flags
     while [[ $# -gt 0 ]]; do
         case $1 in
             -t|--tool)
-                provider="$2"
+                backend_to_test="$2"
                 shift 2
                 ;;
             *)
@@ -163,88 +282,139 @@ test_ai_backend() {
         esac
     done
     
-    # Set provider environment variable if specified
-    if [ -n "$provider" ]; then
-        validate_backend "$provider"
-        export ARCHY_AI_BACKEND="$provider"
+    # Validate and set backend if specified
+    if [[ -n "$backend_to_test" ]]; then
+        validate_ai_backend "$backend_to_test"
+        export ARCHY_AI_BACKEND="$backend_to_test"
     fi
     
-    # Call the test script
-    if [ -n "$test_message" ]; then
-        "$SCRIPT_DIR/test_ai_backend.sh" "$test_message"
+    # Execute the AI backend test script
+    local test_script_path="$SCRIPT_DIR/test_ai_backend.sh"
+    
+    if [[ -n "$test_message" ]]; then
+        exec "$test_script_path" "$test_message"
     else
-        "$SCRIPT_DIR/test_ai_backend.sh"
+        exec "$test_script_path"
     fi
 }
 
-show_help() {
-    echo "archy: 🏛️ Architecture documentation generator using AI backends (cursor-agent, fabric) 🏛️"
-    echo ""
-    echo "Usage:"
-    echo "  archy fresh [-p project] [-f folder] [-d doc] [-n name] [-t tool]"
-    echo "  archy update [-p project] [-f folder] [-d doc] [-t tool]"
-    echo "  archy test [-t tool] [message]      # Test AI backend (cursor-agent|fabric)"
-    echo "  archy [filename]                    # Legacy: treat as update with filename"
-    echo ""
-    echo "Flags:"
-    echo "  -p, --project PATH    Git project path (for fresh/update commands)"
-    echo "  -t, --tool NAME       AI tool (cursor-agent|fabric)"
-    echo "  -f, --folder PATH     Subfolder to focus on (optional)"
-    echo "  -d, --doc FILE        Documentation filename (default: arch.md)"
-    echo "  -n, --name NAME       Project name (default: auto-detect from folder)"
-    echo "  -h, --help            Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  archy test                               # Test cursor-agent (default)"
-    echo "  archy test -t fabric                     # Test fabric backend"
-    echo "  archy test -t cursor \"Custom message\"    # Test cursor-agent with custom message"
-    echo "  archy fresh                              # Create arch.md in current dir"
-    echo "  archy fresh -t fabric                    # Create with fabric backend"
-    echo "  archy fresh -f backend -d api.md         # Focus on backend/, output to api.md"
-    echo "  archy fresh -p /path/to/repo -n MyApp -t fabric  # Different project with fabric"
-    echo "  archy update -f frontend                 # Update focusing on frontend/"
-    echo "  archy update -t fabric                   # Update with fabric backend"
-    echo "  archy update -p ../other-repo -t cursor  # Update different project with cursor-agent"
-    echo ""
-    echo "Environment variables (for fresh/update commands):"
-    echo "  ARCHY_AI_BACKEND=cursor-agent            # Use cursor-agent (default)"
-    echo "  ARCHY_AI_BACKEND=fabric                  # Use fabric (supports local models)"
-    echo ""
-    echo "Legacy compatibility:"
-    echo "  archy some-file.md                       # Treats as: archy update -d some-file.md"
+#================================================================
+# HELP AND USAGE FUNCTIONS
+#================================================================
+
+# Display comprehensive help message
+show_help_message() {
+    cat << EOF
+archy: 🏛️ Architecture documentation generator using AI backends (cursor-agent, fabric) 🏛️
+
+Usage:
+  archy fresh [-p project] [-f folder] [-d doc] [-n name] [-t tool]
+  archy update [-p project] [-f folder] [-d doc] [-t tool]
+  archy test [-t tool] [message]      # Test AI backend (cursor-agent|fabric)
+  archy [filename]                    # Legacy: treat as update with filename
+
+Flags:
+  -p, --project PATH    Git project path (for fresh/update commands)
+  -t, --tool NAME       AI tool (cursor-agent|fabric)
+  -f, --folder PATH     Subfolder to focus on (optional)
+  -d, --doc FILE        Documentation filename (default: $DEFAULT_ARCH_FILENAME)
+  -n, --name NAME       Project name (default: auto-detect from folder)
+  -h, --help            Show this help
+
+Examples:
+  archy test                               # Test cursor-agent (default)
+  archy test -t fabric                     # Test fabric backend
+  archy test -t cursor "Custom message"    # Test cursor-agent with custom message
+  archy fresh                              # Create $DEFAULT_ARCH_FILENAME in current dir
+  archy fresh -t fabric                    # Create with fabric backend
+  archy fresh -f backend -d api.md         # Focus on backend/, output to api.md
+  archy fresh -p /path/to/repo -n MyApp -t fabric  # Different project with fabric
+  archy update -f frontend                 # Update focusing on frontend/
+  archy update -t fabric                   # Update with fabric backend
+  archy update -p ../other-repo -t cursor  # Update different project with cursor-agent
+
+Environment variables (for fresh/update commands):
+  ARCHY_AI_BACKEND=cursor-agent            # Use cursor-agent (default)
+  ARCHY_AI_BACKEND=fabric                  # Use fabric (supports local models)
+
+Legacy compatibility:
+  archy some-file.md                       # Treats as: archy update -d some-file.md
+EOF
 }
 
-# Main command dispatch
-CMD="${1:-help}"
+#================================================================
+# COMMAND ROUTING FUNCTIONS
+#================================================================
 
-case "$CMD" in
-    "fresh"|"create"|"new"|"--fresh")
-        shift
-        parse_flags "fresh" "$@"
-        ;;
-    "update"|"--update")
-        shift
-        parse_flags "update" "$@"
-        ;;
-    "test"|"--test")
-        shift
-        test_ai_backend "$@"
-        ;;
-    "-h"|"--help"|"help")
-        show_help
-        ;;
-    *)
-        # Legacy mode: treat first arg as filename
-        if [[ "$CMD" =~ \.(md|txt|rst)$ ]] || [[ "$CMD" == *"arch"* ]]; then
-            echo "🔄 Updating architecture documentation (legacy mode)..."
-            echo "   Directory: $(pwd)"
-            echo "   File: $CMD"
-            exec "$ARCH_SCRIPT" . "" "$CMD"
-        else
-            echo "❌ Unknown command: $CMD"
-            echo ""
-            show_help
-            exit 1
+# Check if command matches any of the provided aliases
+command_matches_aliases() {
+    local command="$1"
+    shift
+    local aliases=("$@")
+    
+    local alias
+    for alias in "${aliases[@]}"; do
+        if [[ "$command" == "$alias" ]]; then
+            return 0
         fi
-        ;;
-esac
+    done
+    return 1
+}
+
+# Handle legacy mode for backward compatibility
+handle_legacy_mode() {
+    local filename="$1"
+    
+    info "Updating architecture documentation (legacy mode)..."
+    echo "   Directory: $(pwd)"
+    echo "   File: $filename"
+    
+    exec "$ARCH_SCRIPT_PATH" . "" "$filename"
+}
+
+# Route command to appropriate handler based on command type
+route_command() {
+    local command="${1:-help}"
+    shift
+    
+    if command_matches_aliases "$command" "${FRESH_COMMAND_ALIASES[@]}"; then
+        parse_command_flags "fresh" "$@"
+        
+    elif command_matches_aliases "$command" "${UPDATE_COMMAND_ALIASES[@]}"; then
+        parse_command_flags "update" "$@"
+        
+    elif command_matches_aliases "$command" "${TEST_COMMAND_ALIASES[@]}"; then
+        test_ai_backend_connectivity "$@"
+        
+    elif command_matches_aliases "$command" "${HELP_COMMAND_ALIASES[@]}"; then
+        show_help_message
+        
+    else
+        # Check for legacy mode: filename with architecture-like extension
+        if [[ "$command" =~ \.(md|txt|rst)$ ]] || [[ "$command" == *"arch"* ]]; then
+            handle_legacy_mode "$command"
+        else
+            error_exit "Unknown command: $command. Use -h for help."
+        fi
+    fi
+}
+
+#================================================================
+# MAIN EXECUTION FUNCTION
+#================================================================
+
+# Main entry point - coordinates all script operations
+main() {
+    # Initialize script environment
+    resolve_script_location
+    
+    # Route to appropriate command handler
+    route_command "$@"
+}
+
+#================================================================
+# SCRIPT ENTRY POINT
+#================================================================
+
+# Execute main function with all command line arguments
+main "$@"
