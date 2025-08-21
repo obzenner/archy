@@ -17,15 +17,21 @@ Given an existing DESIGN DOCUMENT and a summary of CODE CHANGES, update the desi
 - ALWAYS use `-->` for connections, never other arrow types
 - Test every diagram mentally for 100% valid Mermaid syntax
 
-**CORRECT SYNTAX EXAMPLE:**
+**CORRECT SYNTAX & NAMING EXAMPLE:**
 ```mermaid
 flowchart TB
-    User[User Person]
-    System[Main System] 
-    Database[Database System]
+    WebUser[Web User]
+    AdminUser[Admin User]
+    NextJSApp[NextJS Frontend App]
+    ExpressAPI[Express API Server]
+    PostgreSQLDB[PostgreSQL User Database]
+    StripeAPI[Stripe Payment API]
     
-    User --> System
-    System --> Database
+    WebUser --> NextJSApp
+    AdminUser --> NextJSApp
+    NextJSApp --> ExpressAPI
+    ExpressAPI --> PostgreSQLDB
+    ExpressAPI --> StripeAPI
 ```
 
 **WRONG SYNTAX - NEVER DO THIS:**
@@ -33,11 +39,24 @@ flowchart TB
 graph TB
     User(User Person)  <!-- BREAKS RENDERING -->
     System(Main System) <!-- BREAKS RENDERING -->
+    Database(Database)  <!-- GENERIC NAME -->
+    PaymentService(Payment Service)  <!-- GENERIC NAME -->
 ```
 
 # STEPS
 
 - Take a step back and think step-by-step about how to achieve the best possible results by following the steps below.
+
+- **CRITICAL: ANALYZE CODE CHANGES FOR ACTUAL CODEBASE SPECIFICS** - Before updating any diagrams, thoroughly examine the code changes to identify:
+  * New real service names (from new package.json, docker-compose.yml changes, new service folders, environment files, etc.)
+  * Actual new databases or database changes (PostgreSQL, MongoDB, Redis, etc. - look for new connection strings, ORM configs)
+  * New external integrations (Stripe, Auth0, AWS services, third-party APIs - check for new API keys, SDKs, HTTP clients)
+  * Specific new frameworks or technology changes (React, Next.js, Express, FastAPI, etc.)
+  * New message queues, event systems, websockets (RabbitMQ, Kafka, Socket.io, etc.)
+  * Infrastructure/deployment changes (Docker, Kubernetes, AWS, Vercel, etc.)
+  * Authentication/authorization system changes (JWT, OAuth, specific providers)
+
+- **USE REAL NAMES FROM CODE CHANGES** - When updating diagrams, use actual service names found in the code changes, not generic names like "New Service", "Updated Database". Use names like "UserProfileService", "StripePaymentAPI", "PostgreSQLUserDB", etc.
 
 - Carefully analyze the existing DESIGN DOCUMENT to understand the current architecture, including all C4 diagrams (Context, Container, Deployment) and component tables.
 
@@ -65,6 +84,7 @@ graph TB
 - For C4 diagrams, ensure:
   - Mermaid syntax follows the CRITICAL SYNTAX RULES above
   - All new components are properly represented with square brackets [] only
+  - **USE ACTUAL SERVICE NAMES from the code changes, not generic names like "New Service" - instead use "UserAuthService", "PaymentProcessorAPI", etc.**
   - Relationships and communication flows are accurate
   - Styling and naming conventions are consistent
   - Never use parentheses () in node names
@@ -80,6 +100,7 @@ graph TB
 - Output ONLY the final updated architecture document content - NO analysis process or thinking
 - Do NOT include phrases like "I'll scan the directory" or "I'll analyze the codebase"
 - Output the complete updated design document using the same structure as the input
+- **MANDATORY: Use ONLY real service names, database names, API names found in the code changes - NEVER generic names like "New Service" or "Updated Database"**
 - Use valid Markdown formatting only
 - Ensure all mermaid diagrams follow the CRITICAL SYNTAX RULES above
 - Maintain the existing sections but update content to reflect code changes

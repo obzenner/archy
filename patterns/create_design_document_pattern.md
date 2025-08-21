@@ -17,15 +17,21 @@ Given a description of idea or system, provide a well written, detailed design d
 - ALWAYS use `-->` for connections, never other arrow types
 - Test every diagram mentally for 100% valid Mermaid syntax
 
-**CORRECT SYNTAX EXAMPLE:**
+**CORRECT SYNTAX & NAMING EXAMPLE:**
 ```mermaid
 flowchart TB
-    User[User Person]
-    System[Main System] 
-    Database[Database System]
+    WebUser[Web User]
+    AdminUser[Admin User]
+    NextJSApp[NextJS Frontend App]
+    ExpressAPI[Express API Server]
+    PostgreSQLDB[PostgreSQL User Database]
+    StripeAPI[Stripe Payment API]
     
-    User --> System
-    System --> Database
+    WebUser --> NextJSApp
+    AdminUser --> NextJSApp
+    NextJSApp --> ExpressAPI
+    ExpressAPI --> PostgreSQLDB
+    ExpressAPI --> StripeAPI
 ```
 
 **WRONG SYNTAX - NEVER DO THIS:**
@@ -33,11 +39,24 @@ flowchart TB
 graph TB
     User(User Person)  <!-- BREAKS RENDERING -->
     System(Main System) <!-- BREAKS RENDERING -->
+    Database(Database)  <!-- GENERIC NAME -->
+    PaymentService(Payment Service)  <!-- GENERIC NAME -->
 ```
 
 # STEPS
 
 - Take a step back and think step-by-step about how to achieve the best possible results by following the steps below.
+
+- **CRITICAL: ANALYZE THE ACTUAL CODEBASE FIRST** - Before creating any diagrams, thoroughly examine the provided codebase to identify:
+  * Real service names (from package.json, docker-compose.yml, service folders, environment files, etc.)
+  * Actual databases used (PostgreSQL, MongoDB, Redis, etc. - look for connection strings, ORM configs)
+  * Real external integrations (Stripe, Auth0, AWS services, third-party APIs - check for API keys, SDKs, HTTP clients)
+  * Specific frontend/backend frameworks (React, Next.js, Express, FastAPI, etc.)
+  * Message queues, event systems, websockets (RabbitMQ, Kafka, Socket.io, etc.)
+  * Deployment infrastructure (Docker, Kubernetes, AWS, Vercel, etc.)
+  * Authentication/authorization systems (JWT, OAuth, specific providers)
+
+- **USE REAL NAMES IN DIAGRAMS** - Never use generic names like "Database", "API Service", "Frontend". Instead use actual names like "UserProfileService", "PaymentProcessorAPI", "PostgreSQLUserDB", "StripeIntegration", etc.
 
 - Think deeply about the nature and meaning of the input to understand the system architecture.
 
@@ -53,15 +72,15 @@ graph TB
 
 - Under that, create a section called DESIGN. Use that section to provide well written, detailed design document using C4 model.
 
-- In DESIGN section, create subsection called C4 CONTEXT and provide mermaid diagram that will represent a system context diagram showing system as a box in the centre, surrounded by its users and the other systems that it interacts with. **CRITICAL: Use only square brackets [] for node names, never parentheses ()**
+- In DESIGN section, create subsection called C4 CONTEXT and provide mermaid diagram that will represent a system context diagram showing system as a box in the centre, surrounded by its users and the other systems that it interacts with. **CRITICAL: Use only square brackets [] for node names, never parentheses (). USE ACTUAL SERVICE NAMES found in the codebase, not generic names like "Payment Service" - instead use "StripeAPI", "PayPalIntegration", etc.**
 
 - Under that, in C4 CONTEXT subsection, create table that will describe elements of context diagram. Include columns: 1. Name - name of element; 2. Type - type of element; 3. Description - description of element; 4. Responsibilities - responsibilities of element; 5. Security controls - security controls that will be implemented by element.
 
-- Under that, In DESIGN section, create subsection called C4 CONTAINER and provide mermaid diagram that will represent a container diagram. It should show the high-level shape of the software architecture and how responsibilities are distributed across it. It also shows the major technology choices and how the containers communicate with one another. **CRITICAL: Use only square brackets [] for node names, never parentheses ()**
+- Under that, In DESIGN section, create subsection called C4 CONTAINER and provide mermaid diagram that will represent a container diagram. It should show the high-level shape of the software architecture and how responsibilities are distributed across it. It also shows the major technology choices and how the containers communicate with one another. **CRITICAL: Use only square brackets [] for node names, never parentheses (). USE SPECIFIC TECHNOLOGY NAMES from the codebase like "NextJSFrontend", "ExpressAPIServer", "PostgreSQLDatabase", "RedisCache", etc.**
 
 - Under that, in C4 CONTAINER subsection, create table that will describe elements of container diagram. Include columns: 1. Name - name of element; 2. Type - type of element; 3. Description - description of element; 4. Responsibilities - responsibilities of element; 5. Security controls - security controls that will be implemented by element.
 
-- Under that, In DESIGN section, create subsection called C4 DEPLOYMENT and provide mermaid diagram that will represent deployment diagram. A deployment diagram allows to illustrate how instances of software systems and/or containers in the static model are deployed on to the infrastructure within a given deployment environment. **CRITICAL: Use only square brackets [] for node names, never parentheses ()**
+- Under that, In DESIGN section, create subsection called C4 DEPLOYMENT and provide mermaid diagram that will represent deployment diagram. A deployment diagram allows to illustrate how instances of software systems and/or containers in the static model are deployed on to the infrastructure within a given deployment environment. **CRITICAL: Use only square brackets [] for node names, never parentheses (). USE ACTUAL DEPLOYMENT NAMES from the codebase like "VercelPlatform", "AWSEKSCluster", "DigitalOceanDroplet", "DockerContainer", etc.**
 
 - Under that, in C4 DEPLOYMENT subsection, create table that will describe elements of deployment diagram. Include columns: 1. Name - name of element; 2. Type - type of element; 3. Description - description of element; 4. Responsibilities - responsibilities of element; 5. Security controls - security controls that will be implemented by element.
 
@@ -74,6 +93,7 @@ graph TB
 - Output ONLY the final architecture document content - NO analysis process or thinking
 - Do NOT include phrases like "I'll scan the directory" or "I'll analyze the codebase" 
 - Start directly with "## BUSINESS POSTURE" section
+- **MANDATORY: Use ONLY real service names, database names, API names found in the actual codebase - NEVER generic names**
 - Use valid Markdown formatting only
 - Ensure all mermaid diagrams follow the CRITICAL SYNTAX RULES above
 - Do not use bold or italic formatting in the Markdown (no asterisks)
