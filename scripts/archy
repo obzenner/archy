@@ -2,8 +2,8 @@
 
 # archy: Architecture documentation generator
 # Usage: 
-#   archy fresh [-p project] [-f folder] [-d doc] [-n name]   - Create fresh architecture doc
-#   archy update [-p project] [-f folder] [-d doc]           - Update from git changes
+#   archy fresh [-p project] [-f folder] [-d doc] [-n name] [-t tool]   - Create fresh architecture doc
+#   archy update [-p project] [-f folder] [-d doc] [-t tool]           - Update from git changes
 #   archy [file]                                              - Treat first arg as filename for update
 
 set -euo pipefail
@@ -31,6 +31,8 @@ if [ ! -f "$ARCH_SCRIPT" ]; then
 fi
 
 # Parse command and flags
+
+
 parse_flags() {
     local mode="$1"
     shift
@@ -40,6 +42,7 @@ parse_flags() {
     SUBFOLDER=""
     ARCH_FILE="arch.md"
     PROJECT_NAME=""
+    AI_TOOL=""
     
     # Parse flags
     while [[ $# -gt 0 ]]; do
@@ -60,6 +63,10 @@ parse_flags() {
                 PROJECT_NAME="$2"
                 shift 2
                 ;;
+            -t|--tool)
+                AI_TOOL="$2"
+                shift 2
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -72,6 +79,11 @@ parse_flags() {
         esac
     done
     
+    # Set AI backend environment variable if specified
+    if [ -n "$AI_TOOL" ]; then
+        export ARCHY_AI_BACKEND="$AI_TOOL"
+    fi
+    
     # Execute the command
     if [ "$mode" = "fresh" ]; then
         echo "🏗️  Creating fresh architecture documentation..."
@@ -79,6 +91,7 @@ parse_flags() {
         echo "   Folder: ${SUBFOLDER:-"(root)"}"
         echo "   Output: $ARCH_FILE"
         echo "   Name: ${PROJECT_NAME:-"(auto-detect)"}"
+        echo "   AI Backend: ${AI_TOOL:-"${ARCHY_AI_BACKEND:-cursor-agent}"}"
         
         if [ -n "$PROJECT_NAME" ]; then
             exec "$ARCH_SCRIPT" --fresh "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE" "$PROJECT_NAME"
@@ -90,32 +103,76 @@ parse_flags() {
         echo "   Project: $PROJECT_PATH"
         echo "   Folder: ${SUBFOLDER:-"(root)"}"
         echo "   File: $ARCH_FILE"
+        echo "   AI Backend: ${AI_TOOL:-"${ARCHY_AI_BACKEND:-cursor-agent}"}"
         
         exec "$ARCH_SCRIPT" "$PROJECT_PATH" "$SUBFOLDER" "$ARCH_FILE"
     fi
 }
 
+# Test AI backend function with provider selection
+test_ai_backend() {
+    local provider=""
+    local test_message=""
+    
+    # Parse flags for test command
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--tool)
+                provider="$2"
+                shift 2
+                ;;
+            *)
+                test_message="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    # Set provider environment variable if specified
+    if [ -n "$provider" ]; then
+        export ARCHY_AI_BACKEND="$provider"
+    fi
+    
+    # Call the test script
+    if [ -n "$test_message" ]; then
+        "$SCRIPT_DIR/test_ai_backend.sh" "$test_message"
+    else
+        "$SCRIPT_DIR/test_ai_backend.sh"
+    fi
+}
+
 show_help() {
-    echo "archy: 🏛️ Architecture documentation generator using cursor-agent CLI 🏛️"
+    echo "archy: 🏛️ Architecture documentation generator using AI backends (cursor-agent, fabric) 🏛️"
     echo ""
     echo "Usage:"
-    echo "  archy fresh [-p project] [-f folder] [-d doc] [-n name]"
-    echo "  archy update [-p project] [-f folder] [-d doc]"
+    echo "  archy fresh [-p project] [-f folder] [-d doc] [-n name] [-t tool]"
+    echo "  archy update [-p project] [-f folder] [-d doc] [-t tool]"
+    echo "  archy test [-t tool] [message]      # Test AI backend (cursor-agent|fabric)"
     echo "  archy [filename]                    # Legacy: treat as update with filename"
     echo ""
     echo "Flags:"
-    echo "  -p, --project PATH    Git project path (default: current directory)"
+    echo "  -p, --project PATH    Git project path (for fresh/update commands)"
+    echo "  -t, --tool NAME       AI tool (cursor-agent|fabric)"
     echo "  -f, --folder PATH     Subfolder to focus on (optional)"
     echo "  -d, --doc FILE        Documentation filename (default: arch.md)"
     echo "  -n, --name NAME       Project name (default: auto-detect from folder)"
     echo "  -h, --help            Show this help"
     echo ""
     echo "Examples:"
+    echo "  archy test                               # Test cursor-agent (default)"
+    echo "  archy test -t fabric                     # Test fabric backend"
+    echo "  archy test -t cursor \"Custom message\"    # Test cursor-agent with custom message"
     echo "  archy fresh                              # Create arch.md in current dir"
+    echo "  archy fresh -t fabric                    # Create with fabric backend"
     echo "  archy fresh -f backend -d api.md         # Focus on backend/, output to api.md"
-    echo "  archy fresh -p /path/to/repo -n MyApp    # Different project with custom name"
+    echo "  archy fresh -p /path/to/repo -n MyApp -t fabric  # Different project with fabric"
     echo "  archy update -f frontend                 # Update focusing on frontend/"
-    echo "  archy update -p ../other-repo            # Update different project"
+    echo "  archy update -t fabric                   # Update with fabric backend"
+    echo "  archy update -p ../other-repo -t cursor  # Update different project with cursor-agent"
+    echo ""
+    echo "Environment variables (for fresh/update commands):"
+    echo "  ARCHY_AI_BACKEND=cursor-agent            # Use cursor-agent (default)"
+    echo "  ARCHY_AI_BACKEND=fabric                  # Use fabric (supports local models)"
     echo ""
     echo "Legacy compatibility:"
     echo "  archy some-file.md                       # Treats as: archy update -d some-file.md"
@@ -132,6 +189,10 @@ case "$CMD" in
     "update"|"--update")
         shift
         parse_flags "update" "$@"
+        ;;
+    "test"|"--test")
+        shift
+        test_ai_backend "$@"
         ;;
     "-h"|"--help"|"help")
         show_help

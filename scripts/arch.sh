@@ -11,11 +11,14 @@
 
 set -euo pipefail
 
+# Create temp directory in system temp space
+TEMP_DIR=$(mktemp -d -t archy-XXXXXX)
+
 # Trap to ensure cleanup even on errors/interrupts
 cleanup_tmp() {
-    if [ -d "tmp" ]; then
+    if [ -d "$TEMP_DIR" ]; then
         echo -e "${CYAN}Cleaning up temporary files...${NC}"
-        rm -rf tmp
+        rm -rf "$TEMP_DIR"
         echo -e "${GREEN}✅ Cleanup complete${NC}"
     fi
 }
@@ -32,6 +35,36 @@ NC='\033[0m' # No Color
 
 # Get script directory early, before we change working directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# AI Backend Configuration
+ARCHY_AI_BACKEND="${ARCHY_AI_BACKEND:-cursor-agent}"
+
+# AI Backend abstraction function
+call_ai_backend() {
+    local prompt_file="$1"
+    local output_file="$2"
+    local force_flag="${3:-}"
+    
+    case "$ARCHY_AI_BACKEND" in
+        "cursor-agent")
+            echo -e "${CYAN}Using cursor-agent backend...${NC}"
+            if [ "$force_flag" = "--force" ]; then
+                cursor-agent -p --force --output-format json "$(cat "$prompt_file")" > "$output_file"
+            else
+                cursor-agent -p --output-format json "$(cat "$prompt_file")" > "$output_file"
+            fi
+            ;;
+        "fabric")
+            echo -e "${CYAN}Using fabric-ai backend...${NC}"
+            local raw_output=$(echo "$(cat "$prompt_file")" | fabric-ai 2>/dev/null || echo "Error: Failed to call fabric-ai")
+            jq -n --arg result "$raw_output" '{"result": $result}' > "$output_file"
+            ;;
+        *)
+            echo -e "${RED}ERROR: Unknown AI backend '$ARCHY_AI_BACKEND'. Supported: cursor-agent, fabric${NC}"
+            exit 1
+            ;;
+    esac
+}
 
 # Parse arguments
 FRESH_MODE=false
@@ -87,10 +120,8 @@ echo -e "${YELLOW}Git root:${NC} $GIT_ROOT"
 # Change to git root for all git operations
 cd "$GIT_ROOT"
 
-# Clean up and create temp directory
+# Preparing workspace
 echo -e "${CYAN}Preparing workspace...${NC}"
-rm -rf tmp
-mkdir -p tmp
 
 # Construct architecture file path (always absolute)
 ARCH_FILE="$ANALYSIS_TARGET_ABS/$ARCH_FILE_NAME"
@@ -101,7 +132,7 @@ if [ "$FRESH_MODE" = true ]; then
     
     # Fresh mode - analyze entire codebase like create_arch.sh
     PATTERN_FILE="$SCRIPT_DIR/../patterns/create_design_document_pattern.md"
-    cp "$PATTERN_FILE" tmp/create_pattern.txt
+    cp "$PATTERN_FILE" $TEMP_DIR/create_pattern.txt
 
     # Create input for new architecture document
     echo -e "${CYAN}Preparing full codebase analysis prompt...${NC}"
@@ -115,38 +146,38 @@ if [ "$FRESH_MODE" = true ]; then
         fi
         echo ""
         echo "Analyze the codebase structure and create appropriate C4 diagrams and documentation."
-    } > tmp/create_input.md
+    } > $TEMP_DIR/create_input.md
 
     # Create full prompt
     {
-        cat tmp/create_pattern.txt
+        cat $TEMP_DIR/create_pattern.txt
         echo ""
-        cat tmp/create_input.md
-    } > tmp/full_prompt.txt
+        cat $TEMP_DIR/create_input.md
+    } > $TEMP_DIR/full_prompt.txt
 
-    # Create new architecture with cursor-agent
-    echo -e "${MAGENTA}Generating fresh architecture document with cursor-agent...${NC}"
+    # Create new architecture with AI backend
+    echo -e "${MAGENTA}Generating fresh architecture document with ${ARCHY_AI_BACKEND}...${NC}"
     echo "   This may take a minute, analyzing entire codebase..."
-    cursor-agent -p --output-format json "$(cat tmp/full_prompt.txt)" > tmp/cursor_response.json
+    call_ai_backend $TEMP_DIR/full_prompt.txt $TEMP_DIR/cursor_response.json
 
-    # Extract the result field from cursor-agent JSON response
+    # Extract the result field from AI backend JSON response
     echo -e "${CYAN}Processing response...${NC}"
-    if [ -s tmp/cursor_response.json ]; then
-        jq -r '.result // ""' tmp/cursor_response.json > tmp/new_arch.md
+    if [ -s $TEMP_DIR/cursor_response.json ]; then
+        jq -r '.result // ""' $TEMP_DIR/cursor_response.json > $TEMP_DIR/new_arch.md
     else
-        echo "No response from cursor-agent" > tmp/new_arch.md
+        echo "No response from AI backend" > $TEMP_DIR/new_arch.md
     fi
 
     # Clean up cursor thinking process - keep only from "## BUSINESS POSTURE" onwards
     echo -e "${CYAN}Cleaning up output format...${NC}"
-    if grep -q "## BUSINESS POSTURE" tmp/new_arch.md; then
-        sed -n "/## BUSINESS POSTURE/,\$p" tmp/new_arch.md > tmp/cleaned_arch.md
-        mv tmp/cleaned_arch.md tmp/new_arch.md
+    if grep -q "## BUSINESS POSTURE" $TEMP_DIR/new_arch.md; then
+        sed -n "/## BUSINESS POSTURE/,\$p" $TEMP_DIR/new_arch.md > $TEMP_DIR/cleaned_arch.md
+        mv $TEMP_DIR/cleaned_arch.md $TEMP_DIR/new_arch.md
     fi
 
     # Write the architecture document to the target location
     echo -e "${GREEN}Writing fresh architecture document...${NC}"
-    cp tmp/new_arch.md "$ARCH_FILE"
+    cp $TEMP_DIR/new_arch.md "$ARCH_FILE"
 
     ACTION="created"
     
@@ -182,12 +213,12 @@ else
     if [ -n "$PATH_FILTER" ]; then
         echo "   Focusing on: ${PATH_FILTER}*"
     fi
-    git diff --no-color --stat $DEFAULT_BRANCH...HEAD -- "${PATH_FILTER}*.py" "${PATH_FILTER}*.ts" "${PATH_FILTER}*.js" "${PATH_FILTER}*.jsx" "${PATH_FILTER}*.tsx" "${PATH_FILTER}*.json" "${PATH_FILTER}*.yaml" "${PATH_FILTER}*.yml" > tmp/changes.diff
-    echo "" >> tmp/changes.diff
-    git diff --no-color $DEFAULT_BRANCH...HEAD -- "${PATH_FILTER}*.py" "${PATH_FILTER}*.ts" "${PATH_FILTER}*.js" "${PATH_FILTER}*.jsx" "${PATH_FILTER}*.tsx" "${PATH_FILTER}*.json" "${PATH_FILTER}*.yaml" "${PATH_FILTER}*.yml" >> tmp/changes.diff
+    git diff --no-color --stat $DEFAULT_BRANCH...HEAD -- "${PATH_FILTER}*.py" "${PATH_FILTER}*.ts" "${PATH_FILTER}*.js" "${PATH_FILTER}*.jsx" "${PATH_FILTER}*.tsx" "${PATH_FILTER}*.json" "${PATH_FILTER}*.yaml" "${PATH_FILTER}*.yml" > $TEMP_DIR/changes.diff
+    echo "" >> $TEMP_DIR/changes.diff
+    git diff --no-color $DEFAULT_BRANCH...HEAD -- "${PATH_FILTER}*.py" "${PATH_FILTER}*.ts" "${PATH_FILTER}*.js" "${PATH_FILTER}*.jsx" "${PATH_FILTER}*.tsx" "${PATH_FILTER}*.json" "${PATH_FILTER}*.yaml" "${PATH_FILTER}*.yml" >> $TEMP_DIR/changes.diff
 
     # Check if changes exist
-    if [ ! -s tmp/changes.diff ]; then
+    if [ ! -s $TEMP_DIR/changes.diff ]; then
         echo -e "${RED}ERROR:${NC} No changes found in current branch compared to $DEFAULT_BRANCH"
         echo "{\"error\": \"No changes found in current branch compared to $DEFAULT_BRANCH\"}"
         exit 1
@@ -199,19 +230,19 @@ else
     {
         echo "Summarize the following git changes for architecture analysis:"
         echo ""
-        cat tmp/changes.diff
-    } > tmp/full_prompt1.txt
+        cat $TEMP_DIR/changes.diff
+    } > $TEMP_DIR/full_prompt1.txt
 
-    # Analyze changes with cursor-agent
-    echo -e "${MAGENTA}Analyzing changes with cursor-agent...${NC}"
-    cursor-agent -p --output-format json "$(cat tmp/full_prompt1.txt)" > tmp/cursor_response.json
+    # Analyze changes with AI backend
+    echo -e "${MAGENTA}Analyzing changes with ${ARCHY_AI_BACKEND}...${NC}"
+    call_ai_backend $TEMP_DIR/full_prompt1.txt $TEMP_DIR/cursor_response.json
 
-    # Extract the result field from cursor-agent JSON response
+    # Extract the result field from AI backend JSON response
     echo -e "${CYAN}Processing change analysis...${NC}"
-    if [ -s tmp/cursor_response.json ]; then
-        jq -r '.result // ""' tmp/cursor_response.json > tmp/change_summary.md
+    if [ -s $TEMP_DIR/cursor_response.json ]; then
+        jq -r '.result // ""' $TEMP_DIR/cursor_response.json > $TEMP_DIR/change_summary.md
     else
-        echo "No response from cursor-agent" > tmp/change_summary.md
+        echo "No response from AI backend" > $TEMP_DIR/change_summary.md
     fi
 
     # Check if architecture file exists to determine which pattern to use  
@@ -223,7 +254,7 @@ else
         # Update existing architecture - use custom pattern if available
         CUSTOM_PATTERN="$SCRIPT_DIR/../patterns/update_arch_diagram_pattern.md"
         if [ -f "$CUSTOM_PATTERN" ]; then
-            cp "$CUSTOM_PATTERN" tmp/arch_diagram_prompt.txt
+            cp "$CUSTOM_PATTERN" $TEMP_DIR/arch_diagram_prompt.txt
         else
             echo '{"error": "Pattern file not found"}' >&2
             exit 1
@@ -235,8 +266,8 @@ else
             cat "$ARCH_FILE"
             echo ""
             echo "CODE CHANGES:"
-            cat tmp/change_summary.md
-        } > tmp/arch_input.md
+            cat $TEMP_DIR/change_summary.md
+        } > $TEMP_DIR/arch_input.md
         
     else
         echo -e "${BLUE}No existing architecture file found${NC}"
@@ -246,51 +277,51 @@ else
         # Create new architecture
         echo -e "${CYAN}Loading creation pattern...${NC}"
         PATTERN_FILE="$SCRIPT_DIR/../patterns/create_design_document_pattern.md"
-        cp "$PATTERN_FILE" tmp/arch_diagram_prompt.txt
+        cp "$PATTERN_FILE" $TEMP_DIR/arch_diagram_prompt.txt
         
         # Prepare input for creating new architecture document
         {
             echo "Based on the following code changes, create a comprehensive architecture design document:"
             echo ""
-            cat tmp/change_summary.md
+            cat $TEMP_DIR/change_summary.md
             echo ""
             echo "The system is called '$PROJECT_NAME' and processes data."
-        } > tmp/arch_input.md
+        } > $TEMP_DIR/arch_input.md
     fi
 
     # Create full prompt for architecture update/creation
     {
-        cat tmp/arch_diagram_prompt.txt
+        cat $TEMP_DIR/arch_diagram_prompt.txt
         echo ""
-        cat tmp/arch_input.md
-    } > tmp/full_prompt2.txt
+        cat $TEMP_DIR/arch_input.md
+    } > $TEMP_DIR/full_prompt2.txt
     
     if [ "$ACTION" = "updated" ]; then
-        echo -e "${MAGENTA}Updating architecture document with cursor-agent...${NC}"
+        echo -e "${MAGENTA}Updating architecture document with ${ARCHY_AI_BACKEND}...${NC}"
         echo "   This may take a minute, processing changes..."
     else
-        echo -e "${MAGENTA}Creating new architecture document with cursor-agent...${NC}"
+        echo -e "${MAGENTA}Creating new architecture document with ${ARCHY_AI_BACKEND}...${NC}"
         echo "   This may take a minute, analyzing changes..."
     fi
     
-    cursor-agent -p --force --output-format json "$(cat tmp/full_prompt2.txt)" > tmp/cursor_arch_response.json
+    call_ai_backend $TEMP_DIR/full_prompt2.txt $TEMP_DIR/cursor_arch_response.json "--force"
     
-    # Extract the result field from cursor-agent JSON response
-    if [ -s tmp/cursor_arch_response.json ]; then
-        jq -r '.result // ""' tmp/cursor_arch_response.json > tmp/proposed_arch.md
+    # Extract the result field from AI backend JSON response
+    if [ -s $TEMP_DIR/cursor_arch_response.json ]; then
+        jq -r '.result // ""' $TEMP_DIR/cursor_arch_response.json > $TEMP_DIR/proposed_arch.md
     else
         if [ "$ACTION" = "updated" ]; then
-            echo "No response from cursor-agent for architecture update" > tmp/proposed_arch.md
+            echo "No response from AI backend for architecture update" > $TEMP_DIR/proposed_arch.md
         else
-            echo "No response from cursor-agent for architecture creation" > tmp/proposed_arch.md
+            echo "No response from AI backend for architecture creation" > $TEMP_DIR/proposed_arch.md
         fi
     fi
     
     # Clean up cursor thinking process - keep only from "## BUSINESS POSTURE" onwards
     echo -e "${CYAN}Cleaning up output format...${NC}"
-    if grep -q "## BUSINESS POSTURE" tmp/proposed_arch.md; then
-        sed -n "/## BUSINESS POSTURE/,\$p" tmp/proposed_arch.md > tmp/cleaned_arch.md
-        mv tmp/cleaned_arch.md tmp/proposed_arch.md
+    if grep -q "## BUSINESS POSTURE" $TEMP_DIR/proposed_arch.md; then
+        sed -n "/## BUSINESS POSTURE/,\$p" $TEMP_DIR/proposed_arch.md > $TEMP_DIR/cleaned_arch.md
+        mv $TEMP_DIR/cleaned_arch.md $TEMP_DIR/proposed_arch.md
     fi
     
     # Write the architecture document to the target location
@@ -299,7 +330,7 @@ else
     else
         echo -e "${GREEN}Writing new architecture document...${NC}"
     fi
-    cp tmp/proposed_arch.md "$ARCH_FILE"
+    cp $TEMP_DIR/proposed_arch.md "$ARCH_FILE"
 fi
 
 # Get file size for reporting

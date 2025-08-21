@@ -4,7 +4,7 @@ SHELL=bash
 
 .PHONY: help
 help:
-	@echo "Archy: Intelligent Architecture Documentation CLI 🏛️"
+	@echo "Archy: 🏛️ Intelligent Architecture Documentation CLI 🏛️"
 	@echo ""
 	@echo "Installation:"
 	@echo "  make setup-cli        - Install 'archy' command globally (interactive)"
@@ -15,249 +15,123 @@ help:
 	@echo "  make update-arch      - Update architecture doc (with prompts)"
 	@echo "  make fetch-pattern    - Fetch Fabric pattern (with prompts)"
 	@echo "  make examples         - Show usage examples and workflows"
+	@echo "  make test-ai          - Test AI backend with simple message"
 	@echo ""
 	@echo "Usage after installation:"
 	@echo "  archy --help          - Show all CLI options"
 	@echo "  archy fresh           - Create fresh architecture doc"
+	@echo "  archy fresh -t fabric - Create with fabric backend"
 	@echo "  archy update          - Update from git changes"
+	@echo "  archy update -t fabric - Update with fabric backend"
+	@echo "  archy test -t fabric  - Test fabric backend"
+	@echo ""
+	@echo "AI Backend Selection (use -t flag for all commands):"
+	@echo "  -t cursor-agent       - Use cursor-agent backend (default)"
+	@echo "  -t fabric             - Use fabric backend (supports local models)"
 
 # Pure bash CLI tools - no Python setup required
 
 .PHONY: test-scripts
 test-scripts:
 	@echo "Testing if required commands are available..."
-	@command -v curl >/dev/null || (echo "❌ curl not found" && exit 1)
-	@command -v cursor-agent >/dev/null || (echo "❌ cursor-agent not found" && exit 1) 
-	@command -v jq >/dev/null || (echo "❌ jq not found" && exit 1)
-	@echo "✅ All required commands available"
+	@command -v curl >/dev/null || (echo "ERROR: curl not found" && exit 1)
+	@command -v jq >/dev/null || (echo "ERROR: jq not found" && exit 1)
+	@echo "Checking AI backends..."
+	@BACKEND=$${ARCHY_AI_BACKEND:-cursor-agent}; \
+	if [ "$$BACKEND" = "cursor-agent" ]; then \
+		command -v cursor-agent >/dev/null || (echo "ERROR: cursor-agent not found. Install from: https://cursor.com/cli" && exit 1); \
+		echo "SUCCESS: cursor-agent found"; \
+	elif [ "$$BACKEND" = "fabric" ]; then \
+		command -v fabric-ai >/dev/null || (echo "ERROR: fabric-ai not found. Install from: https://github.com/danielmiessler/Fabric" && exit 1); \
+		echo "SUCCESS: fabric-ai found"; \
+	else \
+		echo "ERROR: Unknown AI backend: $$BACKEND (supported: cursor-agent, fabric)"; \
+		exit 1; \
+	fi
+	@echo "SUCCESS: All required commands available"
 
 .PHONY: test
 test: test-scripts
-	@echo "✅ All tests passed!"
+	@echo "SUCCESS: All tests passed!"
+
+.PHONY: test-ai
+test-ai:
+	@./cli/test_ai.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 ## CLI Tools - Interactive Architecture Generation
 
 .PHONY: create-arch
 create-arch:
-	@echo "🏗️  Architecture Document Creator"
-	@echo "================================="
-	@echo ""
-	@echo "Path options (supports absolute and relative paths):"
-	@echo "  . or [Enter]              - Current directory (default)"
-	@echo "  ../api                    - Relative: API service directory"
-	@echo "  ../app                    - Relative: Frontend app directory"
-	@echo "  /full/path/to/service     - Absolute: Any project directory"
-	@echo ""
-	@read -p "📁 Project path: " PROJECT_PATH; \
-	PROJECT_PATH=$${PROJECT_PATH:-.}; \
-	if [ ! -d "$$PROJECT_PATH" ]; then \
-		echo "❌ Project path '$$PROJECT_PATH' does not exist"; \
-		exit 1; \
-	fi; \
-	read -p "📂 Subfolder (optional, press Enter to skip): " SUBFOLDER; \
-	read -p "📄 Architecture file name [arch.md]: " ARCH_FILE; \
-	ARCH_FILE=$${ARCH_FILE:-arch.md}; \
-	read -p "🏷️  Project name (optional, press Enter for auto-detect): " PROJECT_NAME; \
-	echo ""; \
-	echo "🚀 Creating architecture document..."; \
-	echo "   Project: $$PROJECT_PATH"; \
-	if [ -n "$$SUBFOLDER" ]; then echo "   Subfolder: $$SUBFOLDER"; fi; \
-	echo "   Output: $$ARCH_FILE"; \
-	if [ -n "$$PROJECT_NAME" ]; then echo "   Name: $$PROJECT_NAME"; fi; \
-	echo ""; \
-	if [ -n "$$SUBFOLDER" ] && [ -n "$$PROJECT_NAME" ]; then \
-		./scripts/arch.sh --fresh "$$PROJECT_PATH" "$$SUBFOLDER" "$$ARCH_FILE" "$$PROJECT_NAME"; \
-	elif [ -n "$$SUBFOLDER" ]; then \
-		./scripts/arch.sh --fresh "$$PROJECT_PATH" "$$SUBFOLDER" "$$ARCH_FILE"; \
-	elif [ -n "$$PROJECT_NAME" ]; then \
-		./scripts/arch.sh --fresh "$$PROJECT_PATH" "" "$$ARCH_FILE" "$$PROJECT_NAME"; \
-	else \
-		./scripts/arch.sh --fresh "$$PROJECT_PATH" "" "$$ARCH_FILE"; \
-	fi
+	@./cli/create_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 .PHONY: update-arch
 update-arch:
-	@echo "🔄 Architecture Document Updater"
-	@echo "================================"
-	@echo ""
-	@echo "This will analyze git changes and update existing arch.md"
-	@echo ""
-	@echo "Path options (supports absolute and relative paths):"
-	@echo "  . or [Enter]              - Current directory (default)"
-	@echo "  ../api                    - Relative: Update API service docs"  
-	@echo "  ../app                    - Relative: Update frontend app docs"
-	@echo "  /full/path/to/service     - Absolute: Any project directory"
-	@echo ""
-	@read -p "📁 Project path: " PROJECT_PATH; \
-	PROJECT_PATH=$${PROJECT_PATH:-.}; \
-	if [ ! -d "$$PROJECT_PATH" ]; then \
-		echo "❌ Project path '$$PROJECT_PATH' does not exist"; \
-		exit 1; \
-	fi; \
-	read -p "📂 Subfolder (optional, press Enter to skip): " SUBFOLDER; \
-	read -p "📄 Architecture file name [arch.md]: " ARCH_FILE; \
-	ARCH_FILE=$${ARCH_FILE:-arch.md}; \
-	echo ""; \
-	echo "🔍 Checking for git changes..."; \
-	echo "   Project: $$PROJECT_PATH"; \
-	if [ -n "$$SUBFOLDER" ]; then echo "   Subfolder: $$SUBFOLDER"; fi; \
-	echo "   File: $$ARCH_FILE"; \
-	echo ""; \
-	if [ -n "$$SUBFOLDER" ]; then \
-		./scripts/arch.sh "$$PROJECT_PATH" "$$SUBFOLDER" "$$ARCH_FILE"; \
-	else \
-		./scripts/arch.sh "$$PROJECT_PATH" "" "$$ARCH_FILE"; \
-	fi
+	@./cli/update_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 .PHONY: fetch-pattern
 fetch-pattern:
-	@echo "🔍 Fabric Pattern Fetcher"
-	@echo "========================="
-	@echo ""
-	@echo "Fetches Fabric AI patterns from GitHub for custom prompts"
-	@echo ""
-	@echo "Popular patterns:"
-	@echo "  create_design_document          - C4 architecture docs"
-	@echo "  update_architecture_diagram     - Update existing docs" 
-	@echo "  analyze_code_structure          - Code analysis"
-	@echo "  create_summary                  - Project summaries"
-	@echo ""
-	@read -p "📋 Pattern name: " PATTERN_NAME; \
-	if [ -z "$$PATTERN_NAME" ]; then \
-		echo "❌ Pattern name is required"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "📥 Fetching pattern: $$PATTERN_NAME"; \
-	./scripts/fetch_fabric_pattern.sh "$$PATTERN_NAME"
+	@./cli/fetch_pattern.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 .PHONY: examples
 examples:
-	@echo "💡 Common Usage Examples"
+	@echo "Common Usage Examples"
 	@echo "========================"
 	@echo ""
-	@echo "🏗️  Create architecture for current directory:"
-	@echo "   make create-arch"
-	@echo "   → Just press [Enter] for current directory"
-	@echo "   → Creates arch.md with C4 diagrams"
+	@echo "Basic usage (default cursor-agent backend):"
+	@echo "   archy fresh                       - Create arch.md"
+	@echo "   archy update                      - Update from git changes"
 	@echo ""
-	@echo "🔄 Update docs after code changes:"
-	@echo "   make update-arch  "
-	@echo "   → Analyzes git diff and updates arch.md"
+	@echo "Using Fabric backend (with -t flag):"
+	@echo "   archy fresh -t fabric             - Create with fabric"
+	@echo "   archy update -t fabric            - Update with fabric"
 	@echo ""
-	@echo "📋 Document multiple services (examples):"
-	@echo "   cd /path/to/api && make create-arch"
-	@echo "   cd /path/to/app && make create-arch"  
-	@echo "   make create-arch  # Enter: ../some-service"
+	@echo "Testing backends (with -t flag):"
+	@echo "   archy test                            - Test cursor-agent (default)"
+	@echo "   archy test -t fabric                  - Test fabric backend"
+	@echo "   archy test -t cursor \"Custom message\" - Test with custom message"
 	@echo ""
-	@echo "🎯 Pure bash CLI tools - no server needed!"
+	@echo "Advanced options with backend selection:"
+	@echo "   archy fresh -t fabric -f backend -d api.md      - Focus on backend/, output to api.md with fabric"
+	@echo "   archy fresh -t cursor -p /path/to/repo -n MyApp  - Different project with cursor-agent"
+	@echo "   archy update -t fabric -f frontend              - Update focusing on frontend/ with fabric"
+	@echo "   archy update -t cursor -p ../other-repo         - Update different project with cursor-agent"
 	@echo ""
-	@echo "🔍 Available tools:"
-	@echo "   • create_architecture  - Fresh architecture analysis (--fresh mode)"
-	@echo "   • update_architecture  - Update from git changes (default mode)" 
-	@echo "   • fetch_fabric_pattern - Get custom prompt patterns"
+	@echo "Document multiple services with different backends:"
+	@echo "   cd /path/to/api && archy fresh -t cursor"
+	@echo "   cd /path/to/app && archy fresh -t fabric"  
+	@echo "   archy fresh -t fabric -p ../some-service"
 	@echo ""
-	@echo "🛠️  Direct script usage:"
-	@echo "   ./scripts/arch.sh --fresh [path]  - Fresh analysis mode"
-	@echo "   ./scripts/arch.sh [path]          - Git changes mode (default)"
+	@echo "Environment-based backend selection (alternative):"
+	@echo "   export ARCHY_AI_BACKEND=fabric        - Set for session"
+	@echo "   archy fresh                           - Will use fabric"
+	@echo "   archy update                          - Will use fabric"
+	@echo ""
+	@echo "Pure bash CLI tools - no server needed!"
+	@echo ""
+	@echo "Available commands:"
+	@echo "   • archy fresh [-t tool]   - Fresh architecture analysis (--fresh mode)"
+	@echo "   • archy update [-t tool]  - Update from git changes (default mode)" 
+	@echo "   • archy test [-t tool]    - Test AI backend connectivity"
+	@echo ""
+	@echo "Direct script usage:"
+	@echo "   ARCHY_AI_BACKEND=fabric ./scripts/arch.sh --fresh [path]  - Fresh analysis with fabric"
+	@echo "   ARCHY_AI_BACKEND=cursor ./scripts/arch.sh [path]          - Git changes with cursor-agent"
 
 ## CLI Installation
 
 .PHONY: setup-cli
 setup-cli:
-	@echo "🏛️  Archy CLI Setup"
-	@echo "=================="
-	@echo ""
-	@echo "This will install 'archy' command globally on your system."
-	@echo ""
-	@echo "Install locations:"
-	@echo "  1) ~/.local/bin/archy        (recommended - user only)"
-	@echo "  2) /usr/local/bin/archy      (system-wide, requires sudo)"
-	@echo "  3) Custom location"
-	@echo ""
-	@read -p "Choose [1], 2, or 3: " CHOICE; \
-	CHOICE=$${CHOICE:-1}; \
-	case "$$CHOICE" in \
-		"1") \
-			INSTALL_DIR="$$HOME/.local/bin"; \
-			echo "Installing to: $$INSTALL_DIR"; \
-			;; \
-		"2") \
-			INSTALL_DIR="/usr/local/bin"; \
-			echo "Installing to: $$INSTALL_DIR (will prompt for sudo)"; \
-			;; \
-		"3") \
-			read -p "Enter custom path: " INSTALL_DIR; \
-			echo "Installing to: $$INSTALL_DIR"; \
-			;; \
-		*) \
-			echo "Invalid choice, using default: ~/.local/bin"; \
-			INSTALL_DIR="$$HOME/.local/bin"; \
-			;; \
-	esac; \
-	echo ""; \
-	echo "🔧 Setting up installation..."; \
-	mkdir -p "$$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$$INSTALL_DIR"; \
-	chmod +x scripts/arch.sh scripts/archy; \
-	if [ "$$INSTALL_DIR" = "/usr/local/bin" ]; then \
-		sudo ln -sf "$(PWD)/scripts/archy" "$$INSTALL_DIR/archy"; \
-	else \
-		ln -sf "$(PWD)/scripts/archy" "$$INSTALL_DIR/archy"; \
-	fi; \
-	echo "✅ archy installed to $$INSTALL_DIR/archy"; \
-	echo ""; \
-	if ! echo "$$PATH" | grep -q "$$INSTALL_DIR"; then \
-		echo "⚠️  Add $$INSTALL_DIR to your PATH:"; \
-		if [ "$$INSTALL_DIR" = "$$HOME/.local/bin" ]; then \
-			echo "  echo 'export PATH=\"\$$HOME/.local/bin:\$$PATH\"' >> ~/.zshrc"; \
-		else \
-			echo "  echo 'export PATH=\"$$INSTALL_DIR:\$$PATH\"' >> ~/.zshrc"; \
-		fi; \
-		echo "  source ~/.zshrc"; \
-		echo ""; \
-	fi; \
-	echo "🎉 Setup complete! Usage:"; \
-	echo "  archy fresh    - Create fresh architecture doc"; \
-	echo "  archy update   - Update from git changes"; \
-	echo "  archy          - Default: update mode"; \
-	echo "  archy --help   - Show help"
+	@chmod +x cli/setup_cli.sh && ./cli/setup_cli.sh
 
 .PHONY: uninstall-cli
 uninstall-cli:
-	@echo "🗑️  Removing archy CLI installation..."
-	@echo ""
-	@REMOVED=false; \
-	for location in "$$HOME/.local/bin/archy" "/usr/local/bin/archy" "/usr/bin/archy"; do \
-		if [ -L "$$location" ] || [ -f "$$location" ]; then \
-			echo "🔍 Found: $$location"; \
-			if [ "$$location" = "/usr/local/bin/archy" ] || [ "$$location" = "/usr/bin/archy" ]; then \
-				echo "   Removing system installation (may need sudo)..."; \
-				sudo rm -f "$$location" && echo "✅ Removed: $$location" || echo "❌ Failed to remove: $$location"; \
-			else \
-				rm -f "$$location" && echo "✅ Removed: $$location" || echo "❌ Failed to remove: $$location"; \
-			fi; \
-			REMOVED=true; \
-		fi; \
-	done; \
-	if [ "$$REMOVED" = "false" ]; then \
-		echo "ℹ️  No archy installations found in common locations:"; \
-		echo "   - ~/.local/bin/archy"; \
-		echo "   - /usr/local/bin/archy"; \
-		echo "   - /usr/bin/archy"; \
-		echo ""; \
-		echo "💡 If installed elsewhere, remove manually:"; \
-		echo "   which archy  # Find location"; \
-		echo "   rm \$$(which archy)  # Remove it"; \
-	else \
-		echo ""; \
-		echo "🎉 Archy CLI uninstall complete!"; \
-	fi
+	@./cli/uninstall_cli.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 .PHONY: clean
 clean:
 	rm -rf tmp/
-	@echo "✅ Cleaned temporary files"
+	@echo "SUCCESS: Cleaned temporary files"
 
 .PHONY: clean-all
 clean-all: clean
-	@echo "✅ Cleaned everything"
+	@echo "SUCCESS: Cleaned everything"
