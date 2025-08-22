@@ -27,6 +27,10 @@ class ArchitectureDocument:
     
     def save(self) -> None:
         """Save the document to disk."""
+        # Remove existing file to ensure correct filename case
+        if self.file_path.exists():
+            self.file_path.unlink()
+            
         with open(self.file_path, 'w', encoding='utf-8') as f:
             f.write(self.content)
 

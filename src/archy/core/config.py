@@ -181,50 +181,10 @@ class ArchyConfig(BaseModel):
         # Construct final architecture file path
         self.arch_file_path = self.analysis_target_abs / self.arch_filename
         
-        # Handle case-insensitive filesystem conflicts (macOS/Windows)
-        self._handle_case_insensitive_conflicts()
-        
         # Validate write permissions
         self._validate_write_permissions(self.arch_file_path)
         
         return self
-    
-    def _handle_case_insensitive_conflicts(self) -> None:
-        """
-        Handle case-insensitive filesystem conflicts on macOS/Windows.
-        
-        If a file with different case already exists, rename it to avoid confusion.
-        """
-        import platform
-        
-        # Only handle this on case-insensitive filesystems (macOS/Windows)
-        if platform.system() not in ['Darwin', 'Windows']:
-            return
-            
-        target_dir = self.arch_file_path.parent
-        target_name = self.arch_file_path.name
-        
-        # Check for existing files with different case
-        if target_dir.exists():
-            for existing_file in target_dir.iterdir():
-                if (existing_file.is_file() and 
-                    existing_file.name.lower() == target_name.lower() and
-                    existing_file.name != target_name):
-                    
-                    # Found a case conflict - rename the existing file
-                    backup_name = f"{existing_file.stem}_backup{existing_file.suffix}"
-                    backup_path = target_dir / backup_name
-                    
-                    # Ensure backup name doesn't conflict
-                    counter = 1
-                    while backup_path.exists():
-                        backup_name = f"{existing_file.stem}_backup{counter}{existing_file.suffix}"
-                        backup_path = target_dir / backup_name
-                        counter += 1
-                    
-                    existing_file.rename(backup_path)
-                    print(f"ℹ️  Renamed existing file {existing_file.name} → {backup_name} to avoid case conflict")
-                    break
     
     def _find_git_root(self, start_path: Path) -> Optional[Path]:
         """Find the git repository root using GitRepository."""
