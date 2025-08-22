@@ -4,7 +4,7 @@ SHELL=bash
 
 .PHONY: help
 help:
-	@echo "Archy: 🏛️ Intelligent Architecture Documentation CLI 🏛️"
+	@echo "Archy: 🏛️  Intelligent Architecture Documentation CLI 🏛️"
 	@echo ""
 	@echo "Python Installation (Recommended):"
 	@echo "  make install          - Install archy CLI in development mode"
