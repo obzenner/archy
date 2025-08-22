@@ -21,7 +21,7 @@ make help         # Full command reference (in development)
 
 You'll need one of these AI backends:
 - **[Cursor Agent CLI](https://cursor.com/cli)** 
-- **[Fabric](https://github.com/danielmiessler/fabric)**
+- **[Fabric](https://github.com/danielmiessler/fabric)** by @danielmiessler
 
 ## 📄 License
 
