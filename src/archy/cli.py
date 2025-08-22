@@ -12,6 +12,7 @@ from typing import Optional
 import typer
 from rich import print as rprint
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from . import __version__
@@ -82,20 +83,40 @@ def fresh(
     try:
         _print_command_header("Creating", "🏗️", project, folder, doc, backend, name)
         
-        # Create configuration
-        config = ArchyConfig(
-            project_path=project,
-            subfolder=folder,
-            arch_filename=doc,
-            project_name=name,
-            ai_backend=backend,
-            fresh_mode=True
-        )
-        
-        # Run analysis
-        analyzer = ArchitectureAnalyzer(config)
-        document = analyzer.analyze()
-        document.save()
+        # Create configuration with progress
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            
+            # Step 1: Configuration
+            task = progress.add_task("🔧 Initializing configuration...", total=None)
+            config = ArchyConfig(
+                project_path=project,
+                subfolder=folder,
+                arch_filename=doc,
+                project_name=name,
+                ai_backend=backend,
+                fresh_mode=True
+            )
+            progress.update(task, completed=True)
+            
+            # Step 2: Analysis setup
+            progress.update(task, description="📊 Setting up analyzer...")
+            analyzer = ArchitectureAnalyzer(config, progress=progress)
+            analyzer._set_task(task)
+            
+            # Step 3: Run analysis (this will update progress internally)
+            progress.update(task, description="🏗️ Generating architecture documentation...")
+            document = analyzer.analyze()
+            
+            # Step 4: Save
+            progress.update(task, description="💾 Saving document...")
+            document.save()
+            progress.update(task, completed=True)
         
         console.print(f"[green]✅ Created: {document.file_path}[/green]")
         
@@ -144,19 +165,39 @@ def update(
     try:
         _print_command_header("Updating", "🔄", project, folder, doc, backend)
         
-        # Create configuration
-        config = ArchyConfig(
-            project_path=project,
-            subfolder=folder,
-            arch_filename=doc,
-            ai_backend=backend,
-            fresh_mode=False  # Update mode
-        )
-        
-        # Run analysis
-        analyzer = ArchitectureAnalyzer(config)
-        document = analyzer.analyze()
-        document.save()
+        # Create configuration with progress
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            
+            # Step 1: Configuration
+            task = progress.add_task("🔧 Initializing configuration...", total=None)
+            config = ArchyConfig(
+                project_path=project,
+                subfolder=folder,
+                arch_filename=doc,
+                ai_backend=backend,
+                fresh_mode=False  # Update mode
+            )
+            progress.update(task, completed=True)
+            
+            # Step 2: Analysis setup
+            progress.update(task, description="📊 Setting up analyzer...")
+            analyzer = ArchitectureAnalyzer(config, progress=progress)
+            analyzer._set_task(task)
+            
+            # Step 3: Run analysis (this will update progress internally)
+            progress.update(task, description="🔄 Updating architecture documentation...")
+            document = analyzer.analyze()
+            
+            # Step 4: Save
+            progress.update(task, description="💾 Saving document...")
+            document.save()
+            progress.update(task, completed=True)
         
         console.print(f"[green]✅ Updated: {document.file_path}[/green]")
         

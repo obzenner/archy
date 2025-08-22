@@ -5,10 +5,8 @@ This module provides the abstract base class and configuration models
 for different AI backends (cursor-agent, fabric, etc.).
 """
 
-import json
 import subprocess
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, Field

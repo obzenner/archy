@@ -8,6 +8,8 @@ the analysis process, replacing the bash script's main functions.
 from pathlib import Path
 from typing import Optional
 
+from rich.progress import Progress, TaskID
+
 from .config import ArchyConfig
 from .git_ops import GitRepository, GitAnalysis
 from .patterns import pattern_manager
@@ -37,9 +39,12 @@ class ArchitectureAnalyzer:
     object-oriented Python interface.
     """
     
-    def __init__(self, config: ArchyConfig):
+    def __init__(self, config: ArchyConfig, progress: Optional[Progress] = None):
         """Initialize the analyzer with validated configuration."""
         self.config = config
+        self.progress = progress
+        self.current_task: Optional[TaskID] = None
+        
         self.git_repo = GitRepository(config.project_path)
         self.git_analysis: Optional[GitAnalysis] = None
         
@@ -49,29 +54,42 @@ class ArchitectureAnalyzer:
         except Exception as e:
             raise ArchyError(f"Failed to initialize AI backend '{config.ai_backend}': {e}") from e
     
+    def _update_progress(self, description: str) -> None:
+        """Update progress if available."""
+        if self.progress and self.current_task:
+            self.progress.update(self.current_task, description=description)
+    
+    def _set_task(self, task_id: TaskID) -> None:
+        """Set the current task for progress updates."""
+        self.current_task = task_id
+    
     def generate_fresh(self) -> ArchitectureDocument:
         """
         Generate fresh architecture documentation from complete codebase analysis.
         
         Replaces the bash generate_fresh_architecture() function.
         """
-        # Get git analysis
+        # Step 1: Git analysis
+        self._update_progress("📂 Analyzing git repository...")
         self.git_analysis = self.git_repo.analyze_repository(
             path_filter=self.config.path_filter,
             excluded_patterns=self.config.get_excluded_patterns()
         )
         
-        # Generate directory structure
+        # Step 2: Directory structure
+        self._update_progress("🌳 Generating directory structure...")
         directory_structure = self._get_directory_structure()
         
-        # Prepare git information for pattern
+        # Step 3: Prepare git information
+        self._update_progress("🔧 Preparing analysis data...")
         git_info = {
             'git_root': str(self.git_analysis.git_root),
             'current_branch': self.git_analysis.current_branch,
             'default_branch': self.git_analysis.default_branch
         }
         
-        # Create the complete prompt using pattern template
+        # Step 4: Create the complete prompt
+        self._update_progress("📋 Creating AI prompt from pattern template...")
         prompt = pattern_manager.create_fresh_prompt(
             project_name=self.config.project_name,
             analysis_target=self.config.analysis_target_abs,
@@ -80,14 +98,16 @@ class ArchitectureAnalyzer:
             git_info=git_info
         )
         
-        # Send prompt to AI backend and get response
+        # Step 5: Send prompt to AI backend
+        self._update_progress(f"🤖 Calling {self.config.ai_backend.value} AI backend (this may take a while)...")
         try:
             response = self.ai_backend.generate(prompt, force=False)
             
             if not response.success:
                 raise ArchyAIBackendError(f"AI backend failed: {response.content}")
             
-            # Clean the response to extract architecture content
+            # Step 6: Clean the response
+            self._update_progress("🧹 Processing AI response...")
             cleaned_content = clean_architecture_response(response.content)
             
             return ArchitectureDocument(
@@ -160,13 +180,15 @@ You can manually process it with:
         
         Replaces the bash update_from_git_changes() function.
         """
-        # Get git analysis for changes
+        # Step 1: Get git analysis for changes
+        self._update_progress("📂 Analyzing git repository for changes...")
         self.git_analysis = self.git_repo.analyze_repository(
             path_filter=self.config.path_filter,
             excluded_patterns=self.config.get_excluded_patterns()
         )
         
-        # Check if there are any changes
+        # Step 2: Check if there are any changes
+        self._update_progress("🔍 Checking for relevant changes...")
         if not self.git_analysis.has_changes:
             # No changes detected - check if arch file exists
             if self.config.arch_file_path.exists():
@@ -176,17 +198,22 @@ You can manually process it with:
                 )
             else:
                 # No changes and no existing file - fall back to fresh mode
+                self._update_progress("📄 No changes found, falling back to fresh analysis...")
                 return self.generate_fresh()
         
-        # Analyze the changes
+        # Step 3: Analyze the changes
+        self._update_progress("📊 Summarizing changes...")
         changes_summary = self._summarize_changes(self.git_analysis.changed_files)
         
-        # Check if existing architecture file exists
+        # Step 4: Check if existing architecture file exists
+        self._update_progress("📄 Checking for existing architecture file...")
         if self.config.arch_file_path.exists():
             # Update existing file
+            self._update_progress("🔄 Updating existing architecture file...")
             return self._update_existing_architecture(changes_summary)
         else:
             # Create new file based on changes
+            self._update_progress("🏗️ Creating new architecture file from changes...")
             return self._create_from_changes(changes_summary)
     
     def _summarize_changes(self, changes) -> str:
