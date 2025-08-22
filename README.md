@@ -6,9 +6,7 @@
 
 1. Clone repo
 
-```bash
-make install
-```
+2. `make install`
 
 ## 📖 Usage
 
