@@ -55,14 +55,20 @@ class GitRepository:
     Replaces bash git commands with proper Python API calls.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, dry_run: bool = False):
         """Initialize git repository interface."""
         self.path = path
+        self.dry_run = dry_run
         self._repo: Optional[Repo] = None
         self._git_root: Optional[Path] = None
         self._default_branch: Optional[str] = None
 
-        self._initialize_repo()
+        if not dry_run:
+            self._initialize_repo()
+        else:
+            # In dry-run mode, create mock git setup
+            self._git_root = path
+            # Don't initialize actual repo
 
     def _initialize_repo(self) -> None:
         """Initialize the git repository and find root."""
@@ -87,6 +93,8 @@ class GitRepository:
     @property
     def repo(self) -> Repo:
         """Get the GitPython repository object."""
+        if self.dry_run:
+            raise ArchyGitError("Git operations not available in dry-run mode")
         if not self._repo:
             raise ArchyGitError("Repository not initialized")
         return self._repo
@@ -300,6 +308,18 @@ class GitRepository:
         """
         if excluded_patterns is None:
             excluded_patterns = []
+
+        # In dry-run mode, return mock git analysis
+        if self.dry_run:
+            return GitAnalysis(
+                changed_files=[],
+                all_tracked_files=[self.path / "mock_file.py"],
+                default_branch="main",
+                current_branch="main",
+                git_root=self._git_root or self.path,
+                total_changes=0,
+                has_changes=False,
+            )
 
         try:
             # Get basic git info

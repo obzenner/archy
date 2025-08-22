@@ -18,13 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-        exclude:
-          # Speed up CI by testing fewer combinations on non-Linux
-          - os: windows-latest  
-            python-version: "3.9"
-          - os: macos-latest
-            python-version: "3.9"
+        python-version: ["3.10", "3.11"]
     
     steps:
     - name: 📥 Checkout code

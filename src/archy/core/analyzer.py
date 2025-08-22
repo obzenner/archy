@@ -51,7 +51,7 @@ class ArchitectureAnalyzer:
         self.progress = progress
         self.current_task: Optional[TaskID] = None
 
-        self.git_repo = GitRepository(config.project_path)
+        self.git_repo = GitRepository(config.project_path, dry_run=config.dry_run)
         self._git_analysis: Optional[GitAnalysis] = None
 
         # Initialize AI backend
