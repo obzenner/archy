@@ -6,16 +6,20 @@ SHELL=bash
 help:
 	@echo "Archy: 🏛️ Intelligent Architecture Documentation CLI 🏛️"
 	@echo ""
-	@echo "Installation:"
-	@echo "  make setup-cli        - Install 'archy' command globally (interactive)"
-	@echo "  make uninstall-cli    - Remove 'archy' command from system"
+	@echo "Python Installation (Recommended):"
+	@echo "  make install          - Install archy CLI in development mode"
+	@echo "  make install-user     - Install archy CLI for current user only"
+	@echo "  make install-dev      - Install in development mode with testing tools"
+	@echo "  make uninstall        - Remove archy CLI from system"
 	@echo ""
-	@echo "CLI Tools (interactive):"
-	@echo "  make create-arch      - Create architecture doc (with prompts)"
-	@echo "  make update-arch      - Update architecture doc (with prompts)"
-
-	@echo "  make examples         - Show usage examples and workflows"
-	@echo "  make test-ai          - Test AI backend with simple message"
+	@echo "Development:"
+	@echo "  make test             - Run all tests"
+	@echo "  make lint             - Run code linting and formatting"
+	@echo "  make format           - Format code with black and ruff"
+	@echo ""
+	@echo "Legacy Bash CLI (Deprecated):"
+	@echo "  make setup-cli-bash   - Install bash version (legacy compatibility)"
+	@echo "  make test-ai-bash     - Test AI backend with bash scripts"
 	@echo ""
 	@echo "Usage after installation:"
 	@echo "  archy --help          - Show all CLI options"
@@ -24,12 +28,70 @@ help:
 	@echo "  archy update          - Update from git changes"
 	@echo "  archy update -t fabric - Update with fabric backend"
 	@echo "  archy test -t fabric  - Test fabric backend"
+	@echo "  archy version         - Show version information"
 	@echo ""
 	@echo "AI Backend Selection (use -t flag for all commands):"
 	@echo "  -t cursor-agent       - Use cursor-agent backend (default)"
 	@echo "  -t fabric             - Use fabric backend (supports local models)"
 
-# Pure bash CLI tools - no Python setup required
+## Python Installation Commands
+
+.PHONY: install
+install:
+	@echo "🏛️ Installing Archy in development mode..."
+	pip install -e .
+	@echo "✅ Installation complete! Run 'archy --help' to get started."
+
+.PHONY: install-user  
+install-user:
+	@echo "🏛️ Installing Archy for current user..."
+	pip install --user .
+	@echo "✅ Installation complete! Run 'archy --help' to get started."
+	@echo "💡 Make sure ~/.local/bin is in your PATH"
+
+.PHONY: install-dev
+install-dev:
+	@echo "🏛️ Installing Archy in development mode with dev dependencies..."
+	pip install -e ".[dev]"
+	@echo "✅ Development installation complete!"
+
+.PHONY: uninstall
+uninstall:
+	@echo "🗑️ Uninstalling Archy..."
+	pip uninstall -y archy || echo "Archy not installed via pip"
+	@echo "✅ Uninstall complete!"
+
+## Development Commands
+
+.PHONY: test
+test:
+	@echo "🧪 Running tests..."
+	pytest tests/ -v
+
+.PHONY: test-coverage
+test-coverage:
+	@echo "🧪 Running tests with coverage..."
+	pytest tests/ --cov=src/archy --cov-report=term-missing
+
+.PHONY: lint
+lint:
+	@echo "🔍 Running linting..."
+	ruff check src/ tests/
+	mypy src/
+
+.PHONY: format
+format:
+	@echo "✨ Formatting code..."
+	black src/ tests/
+	ruff format src/ tests/
+
+.PHONY: format-check
+format-check:
+	@echo "🔍 Checking code formatting..."
+	black --check src/ tests/
+	ruff format --check src/ tests/
+
+## Legacy Bash CLI Commands (Deprecated)
 
 .PHONY: test-scripts
 test-scripts:
@@ -50,13 +112,13 @@ test-scripts:
 	fi
 	@echo "SUCCESS: All required commands available"
 
-.PHONY: test
-test: test-scripts
-	@echo "SUCCESS: All tests passed!"
+.PHONY: test-scripts-bash
+test-scripts-bash:
+	@echo "SUCCESS: All bash script tests passed!"
 
-.PHONY: test-ai
-test-ai:
-	@./cli/test_ai.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+.PHONY: test-ai-bash
+test-ai-bash:
+	@./cli/test_ai.sh || (echo "Run 'make setup-cli-bash' first to set up permissions" && exit 1)
 
 ## CLI Tools - Interactive Architecture Generation
 
@@ -115,15 +177,16 @@ examples:
 	@echo "   ARCHY_AI_BACKEND=fabric ./scripts/arch.sh --fresh [path]  - Fresh analysis with fabric"
 	@echo "   ARCHY_AI_BACKEND=cursor ./scripts/arch.sh [path]          - Git changes with cursor-agent"
 
-## CLI Installation
+## Legacy Bash CLI Installation (Deprecated)
 
-.PHONY: setup-cli
-setup-cli:
+.PHONY: setup-cli-bash
+setup-cli-bash:
+	@echo "⚠️ WARNING: Installing legacy bash CLI. Consider using 'make install' instead."
 	@chmod +x cli/setup_cli.sh && ./cli/setup_cli.sh
 
-.PHONY: uninstall-cli
-uninstall-cli:
-	@./cli/uninstall_cli.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+.PHONY: uninstall-cli-bash
+uninstall-cli-bash:
+	@./cli/uninstall_cli.sh || (echo "Run 'make setup-cli-bash' first to set up permissions" && exit 1)
 
 .PHONY: clean
 clean:
