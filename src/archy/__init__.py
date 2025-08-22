@@ -13,11 +13,11 @@ __license__ = "MIT"
 # Re-export main classes for easier imports
 from .core.analyzer import ArchitectureAnalyzer
 from .core.config import ArchyConfig
-from .exceptions import ArchyError, ArchyConfigError, ArchyGitError
+from .exceptions import ArchyConfigError, ArchyError, ArchyGitError
 
 __all__ = [
     "ArchitectureAnalyzer",
-    "ArchyConfig", 
+    "ArchyConfig",
     "ArchyError",
     "ArchyConfigError",
     "ArchyGitError",

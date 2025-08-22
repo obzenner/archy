@@ -1,0 +1,115 @@
+name: 📦 Publish to PyPI
+
+on:
+  workflow_dispatch:  # Manual triggering only
+    inputs:
+      publish_to:
+        description: 'Where to publish'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - testpypi
+          - pypi
+          - both
+
+jobs:
+  test:
+    name: 🧪 Test Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: make ci-deps
+        
+    - name: 🧹 Lint with ruff
+      run: make ci-lint
+      
+    - name: 🎯 Type check with mypy
+      run: make ci-typecheck
+      
+    - name: ✅ Run tests
+      run: make ci-test-coverage
+      
+    - name: 📊 Upload coverage to Codecov
+      if: matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  build:
+    name: 🏗️ Build Package
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+        
+    - name: 🔨 Build and check package
+      run: make check-package
+      
+    - name: 📤 Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  publish-testpypi:
+    name: 🧪 Publish to TestPyPI
+    runs-on: ubuntu-latest
+    needs: build
+    if: inputs.publish_to == 'testpypi' || inputs.publish_to == 'both'
+    # Note: Configure 'testpypi' environment in GitHub repository settings for additional protection
+    permissions:
+      id-token: write  # For trusted publishing
+      
+    steps:
+    - name: 📥 Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+        
+    - name: 🚀 Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: 🚀 Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: build
+    if: inputs.publish_to == 'pypi' || inputs.publish_to == 'both'
+    # Note: Configure 'pypi' environment in GitHub repository settings for additional protection
+    permissions:
+      id-token: write  # For trusted publishing
+      
+    steps:
+    - name: 📥 Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+        
+    - name: 🚀 Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1

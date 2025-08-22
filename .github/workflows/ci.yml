@@ -1,0 +1,83 @@
+name: 🧪 CI Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 🧪 Test Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        exclude:
+          # Speed up CI by testing fewer combinations on non-Linux
+          - os: windows-latest  
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.9"
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        
+    # Use make targets for consistency with local development
+    - name: 📦 Install dependencies
+      run: make ci-deps
+        
+    - name: 🧹 Lint with ruff
+      run: make ci-lint
+      
+    - name: 🎯 Type check with mypy
+      run: make ci-typecheck
+      
+    - name: ✅ Run tests
+      run: make ci-test-basic
+      
+    - name: 📊 Run tests with coverage (Linux only)
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      run: make ci-test-coverage
+      
+    - name: 📈 Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  package-test:
+    name: 🏗️ Package Build Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+        
+    - name: 🔨 Build and check package
+      run: make check-package
+      
+    - name: 🧪 Test installation
+      run: |
+        pip install dist/*.whl
+        archy --help
