@@ -17,10 +17,7 @@ help:
 	@echo "  make lint             - Run code linting and formatting"
 	@echo "  make format           - Format code with black and ruff"
 	@echo ""
-	@echo "Legacy Bash CLI (Deprecated):"
-	@echo "  make setup-cli-bash   - Install bash version (legacy compatibility)"
-	@echo "  make test-ai-bash     - Test AI backend with bash scripts"
-	@echo ""
+
 	@echo "Usage after installation:"
 	@echo "  archy --help          - Show all CLI options"
 	@echo "  archy fresh           - Create fresh architecture doc"
@@ -91,44 +88,13 @@ format-check:
 	black --check src/ tests/
 	ruff format --check src/ tests/
 
-## Legacy Bash CLI Commands (Deprecated)
 
-.PHONY: test-scripts
-test-scripts:
-	@echo "Testing if required commands are available..."
-	@command -v curl >/dev/null || (echo "ERROR: curl not found" && exit 1)
-	@command -v jq >/dev/null || (echo "ERROR: jq not found" && exit 1)
-	@echo "Checking AI backends..."
-	@BACKEND=$${ARCHY_AI_BACKEND:-cursor-agent}; \
-	if [ "$$BACKEND" = "cursor-agent" ]; then \
-		command -v cursor-agent >/dev/null || (echo "ERROR: cursor-agent not found. Install from: https://cursor.com/cli" && exit 1); \
-		echo "SUCCESS: cursor-agent found"; \
-	elif [ "$$BACKEND" = "fabric" ]; then \
-		command -v fabric-ai >/dev/null || (echo "ERROR: fabric-ai not found. Install from: https://github.com/danielmiessler/Fabric" && exit 1); \
-		echo "SUCCESS: fabric-ai found"; \
-	else \
-		echo "ERROR: Unknown AI backend: $$BACKEND (supported: cursor-agent, fabric)"; \
-		exit 1; \
-	fi
-	@echo "SUCCESS: All required commands available"
 
-.PHONY: test-scripts-bash
-test-scripts-bash:
-	@echo "SUCCESS: All bash script tests passed!"
 
-.PHONY: test-ai-bash
-test-ai-bash:
-	@./cli/test_ai.sh || (echo "Run 'make setup-cli-bash' first to set up permissions" && exit 1)
 
-## CLI Tools - Interactive Architecture Generation
 
-.PHONY: create-arch
-create-arch:
-	@./cli/create_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
-.PHONY: update-arch
-update-arch:
-	@./cli/update_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+
 
 
 
@@ -166,27 +132,15 @@ examples:
 	@echo "   archy fresh                           - Will use fabric"
 	@echo "   archy update                          - Will use fabric"
 	@echo ""
-	@echo "Pure bash CLI tools - no server needed!"
+	@echo "Modern Python CLI - clean and reliable!"
 	@echo ""
 	@echo "Available commands:"
-	@echo "   • archy fresh [-t tool]   - Fresh architecture analysis (--fresh mode)"
-	@echo "   • archy update [-t tool]  - Update from git changes (default mode)" 
+	@echo "   • archy fresh [-t tool]   - Fresh architecture analysis"
+	@echo "   • archy update [-t tool]  - Update from git changes" 
 	@echo "   • archy test [-t tool]    - Test AI backend connectivity"
-	@echo ""
-	@echo "Direct script usage:"
-	@echo "   ARCHY_AI_BACKEND=fabric ./scripts/arch.sh --fresh [path]  - Fresh analysis with fabric"
-	@echo "   ARCHY_AI_BACKEND=cursor ./scripts/arch.sh [path]          - Git changes with cursor-agent"
+	@echo "   • archy version           - Show version information"
 
-## Legacy Bash CLI Installation (Deprecated)
 
-.PHONY: setup-cli-bash
-setup-cli-bash:
-	@echo "⚠️ WARNING: Installing legacy bash CLI. Consider using 'make install' instead."
-	@chmod +x cli/setup_cli.sh && ./cli/setup_cli.sh
-
-.PHONY: uninstall-cli-bash
-uninstall-cli-bash:
-	@./cli/uninstall_cli.sh || (echo "Run 'make setup-cli-bash' first to set up permissions" && exit 1)
 
 .PHONY: clean
 clean:

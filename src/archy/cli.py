@@ -15,6 +15,8 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
+from .core.config import ArchyConfig, ArchySettings
+from .core.analyzer import ArchitectureAnalyzer
 from .exceptions import ArchyError
 
 # Create the main Typer app
@@ -80,9 +82,22 @@ def fresh(
     try:
         _print_command_header("Creating", "🏗️", project, folder, doc, backend, name)
         
-        # TODO: Import and use ArchitectureAnalyzer once implemented
-        console.print("[yellow]⚠️  Fresh mode implementation pending...[/yellow]")
-        console.print(f"Would create: {project / (folder or '.') / doc}")
+        # Create configuration
+        config = ArchyConfig(
+            project_path=project,
+            subfolder=folder,
+            arch_filename=doc,
+            project_name=name,
+            ai_backend=backend,
+            fresh_mode=True
+        )
+        
+        # Run analysis
+        analyzer = ArchitectureAnalyzer(config)
+        document = analyzer.analyze()
+        document.save()
+        
+        console.print(f"[green]✅ Created: {document.file_path}[/green]")
         
     except ArchyError as e:
         console.print(f"[red]❌ Error: {e}[/red]")
@@ -129,9 +144,21 @@ def update(
     try:
         _print_command_header("Updating", "🔄", project, folder, doc, backend)
         
-        # TODO: Import and use ArchitectureAnalyzer once implemented  
-        console.print("[yellow]⚠️  Update mode implementation pending...[/yellow]")
-        console.print(f"Would update: {project / (folder or '.') / doc}")
+        # Create configuration
+        config = ArchyConfig(
+            project_path=project,
+            subfolder=folder,
+            arch_filename=doc,
+            ai_backend=backend,
+            fresh_mode=False  # Update mode
+        )
+        
+        # Run analysis
+        analyzer = ArchitectureAnalyzer(config)
+        document = analyzer.analyze()
+        document.save()
+        
+        console.print(f"[green]✅ Updated: {document.file_path}[/green]")
         
     except ArchyError as e:
         console.print(f"[red]❌ Error: {e}[/red]")
@@ -165,9 +192,32 @@ def test(
         console.print(f"🧪 Testing {backend.value} backend...")
         console.print(f"📝 Message: {message}")
         
-        # TODO: Import and use AI backend testing once implemented
-        console.print("[yellow]⚠️  Backend testing implementation pending...[/yellow]")
-        console.print("✅ Test would be run here")
+        # Test the AI backend
+        from .backends.base import get_backend
+        
+        ai_backend = get_backend(backend.value)
+        
+        # Check if backend is available
+        if not ai_backend.is_available():
+            console.print(f"[red]❌ Backend '{backend.value}' is not available[/red]")
+            console.print(f"[yellow]💡 Make sure {backend.value} is installed and in your PATH[/yellow]")
+            raise typer.Exit(1)
+        
+        console.print(f"[green]✅ Backend '{backend.value}' is available[/green]")
+        
+        # Test connection
+        console.print("📡 Testing connection...")
+        with console.status(f"Sending test message to {backend.value}...", spinner="dots"):
+            response = ai_backend.test_connection(message)
+        
+        if response.success:
+            console.print(f"[green]✅ Test successful![/green]")
+            console.print(f"⏱️  Processing time: {response.processing_time:.2f}s" if response.processing_time else "")
+            console.print("\n📄 Response:")
+            console.print(f"[dim]{response.content[:200]}{'...' if len(response.content) > 200 else ''}[/dim]")
+        else:
+            console.print(f"[red]❌ Test failed: {response.content}[/red]")
+            raise typer.Exit(1)
         
     except ArchyError as e:
         console.print(f"[red]❌ Error: {e}[/red]")
