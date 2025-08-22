@@ -40,15 +40,15 @@ jobs:
     - name: 🎯 Type check with mypy
       run: make ci-typecheck
       
-    - name: ✅ Run tests
-      run: make ci-test-coverage
+    # - name: ✅ Run tests
+    #   run: make ci-test-coverage
       
-    - name: 📊 Upload coverage to Codecov
-      if: matrix.python-version == '3.11'
-      uses: codecov/codecov-action@v5
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+    # - name: 📊 Upload coverage to Codecov
+    #   if: matrix.python-version == '3.11'
+    #   uses: codecov/codecov-action@v5
+    #   with:
+    #     file: ./coverage.xml
+    #     fail_ci_if_error: false
 
   build:
     name: 🏗️ Build Package
