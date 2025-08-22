@@ -1,253 +1,189 @@
 ## BUSINESS POSTURE
-
-- Purpose: automate creation and updates of architecture design documents with C4 diagrams from local code and git diffs
-- Priorities: developer productivity, local-first workflow, reproducibility, fast feedback with progress, minimal setup
-- Scope: runs on developer machines, integrated with Cursor via MCP, orchestrates bash scripts and patterns to generate docs
-- Constraints: operates within repository boundaries, avoids long-lived processes, supports monorepos and subfolders
-- [Updated] Local, versioned patterns only under patterns directory; remote fetch removed for determinism
-- [Updated] Consistent CLI via archy command and interactive wrappers for fresh and update flows
-- [Updated] Legacy pattern fetch scripts removed in favor of local patterns: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh deleted to eliminate remote sources and simplify the flow
-- [Updated] Patterns tightened to enforce strict C4 and Mermaid syntax rules; generation favors fail fast with explicit remediation guidance to reduce invalid diagram output
-
-Business risks:
-- Inaccurate or stale documentation if generation drifts from code or fails silently
-- Unintended egress of sensitive repository context to external model providers
-- Destructive or misplaced file writes due to path misuse
-- Supply chain exposure from external CLIs and remote pattern sources
-- [Updated] Pattern updates require repo changes and reviews because remote fetch is removed
-- [Updated] Reduced supply chain risk by removing remote pattern retrieval and curl-based fetch paths
-- [Updated] Increased short-term friction from stricter pattern validation causing runs to fail on nonconforming diagrams; mitigated by clear fix instructions in patterns
+- Purpose: Generate accurate, up-to-date architecture design documents and C4 diagrams from real codebases via a CLI.
+- Priorities: Developer productivity, repeatable outputs, low friction integration with local tools and CI, safe-by-default operations.
+- Success metrics: Time-to-docs, diagram correctness, CI reliability, ease of use on developer machines.
+- Business risks: Incorrect or stale docs, dependency on external AI CLIs, accidental data exposure in prompts, overwriting important files.
 
 ## SECURITY POSTURE
+- security control: Input validation on paths and filenames in ArchyConfig (regex constraints, traversal checks).
+- security control: System directory blocklist in ArchyConfig (BLOCKED_SYSTEM_DIRS).
+- security control: Max path length guard (MAX_PATH_LENGTH).
+- security control: Write permission checks for target files and directories.
+- security control: Dry-run mode for safe testing without invoking AI CLIs.
+- security control: AIBackend timeouts and bounded retries.
+- security control: Use of GitPython instead of shelling out for git operations.
+- security control: Excluded patterns for large or noisy files (e.g., lock, minified, build artifacts).
+- security control: CI workflow separation for tests (ci.yml) and release (publish-pypi.yml).
+- security control: Pre-commit and linting/typing gates (ruff, mypy, black).
 
-security control: Subprocess execution via asyncio without shell expansion, no stdin  
-security control: Script timeouts and progress reporting to prevent indefinite runs  
-security control: Scripts use set -euo pipefail and explicit paths  
-security control: Local MCP server only, no exposed network listener in default flow  
-security control: Minimal dependencies, Python 3.10+  
-security control: Stderr capture and structured parsing of outputs  
-security control: Make scripts executable with explicit chmod before run  
-[Updated] security control: Local, versioned patterns only; no runtime fetch from remote sources  
-[Updated] security control: Path and filename validation for inputs and outputs in arch sh and archy  
-[Updated] security control: Temp directory isolation with automatic cleanup via traps  
-[Updated] security control: AI backend selection restricted to cursor agent or fabric with output normalization  
-[Updated] security control: Network egress narrowed to model provider only; remote pattern fetch binaries and scripts removed  
-[Updated] security control: Patterns encode strict C4 and Mermaid constraints to reduce prompt injection, enforce deterministic diagram structure, and prevent invalid syntax from being committed
+- accepted risk: External CLIs cursor-agent and fabric-ai are executed locally; supply chain and runtime behavior rely on host integrity.
+- accepted risk: AI output may be untrusted; content is written to local files after basic cleaning only.
+- accepted risk: Prompt may include code/context that could contain secrets if present in repo.
+- accepted risk: Overwriting architecture documents on save if misconfigured.
 
-accepted risk: External model API may receive prompts and summaries from local repo  
-accepted risk: Local scripts can modify repository files including documentation  
-accepted risk: Dependence on installed git, jq, curl, cursor agent versions  
-[Updated] accepted risk: Only file types covered by globs are analyzed during updates  
-[Updated] removed risk: Remote pattern fetch drift due to pinning gaps is no longer applicable  
-[Updated] accepted risk: Stricter validation may block document generation until issues are resolved; increases reliability but may slow first-time updates
+Recommended high-priority security controls
+- security control: Secrets redaction before constructing prompts; denylist common secret patterns with opt-in allowlist.
+- security control: Output sanitization and path allowlisting for writes (restrict to project_path and arch_filename).
+- security control: Provenance for external CLIs (version pinning, checksum verification, or installation guidance with signatures).
+- security control: Network egress policy documentation for AI CLIs; option to fully local backend by default (fabric-ai).
+- security control: Robust telemetry and auditable logs of backend invocations (command, duration, file touched) without sensitive content.
+- security control: CI supply chain hardening (pin actions by commit SHA, OIDC for PyPI publish, attestations).
+- security control: Optional content size caps and sensitive file filters beyond current EXCLUDED_PATTERNS.
 
-Recommended high-priority controls:
-- security control: Output path allowlist and filename normalization for generated artifacts
-- security control: Dry run mode with diff preview, gated writes by user confirmation
-- security control: Egress policy and redaction for prompts to model providers
-- security control: Pin dependencies and produce SBOM; periodic vulnerability scans
-- security control: Pre-commit hooks for secret scanning and document formatting
-- security control: Append-only audit log of tool invocations and file writes
-- security control: Checksums or pinned commit ref for fetched patterns
-- security control: Configurable git diff base with repo default detection
-- [Updated] recommendation: Validate and document AI backend setup and selection defaults
-- [Updated] recommendation: Add pre-commit check to lint C4 Mermaid blocks against pattern rules to catch violations before commit
-
-Security requirements:
-- Least privilege file IO within project directories
-- Deterministic, idempotent generation to reduce noisy diffs
-- TLS for all outbound requests from CLIs; managed API keys
-- No PII or secrets in prompts; redact sensitive paths and code
-- Clear errors and non-zero exit on partial failures
-- Compatibility with enterprise macOS controls and EDR
-- [Updated] Enforce temp isolation and cleanup for all intermediate artifacts
-- [Updated] Enforce strict C4 and Mermaid syntax in generated outputs to prevent malformed diagrams
+Security requirements
+- Least-privilege file writes limited to target doc path.
+- No execution of repository content beyond reading; forbid arbitrary subprocess from analyzed code.
+- Safe defaults: dry-run available, fabric-ai local backend documented, bounded timeouts.
+- Deterministic CI: reproducible builds, lint/type/test gates, and protected release to PyPI.
 
 ## DESIGN
 
 ### C4 CONTEXT
-
 ```mermaid
 flowchart LR
-    Developer[Developer]
-    Cursor_IDE[Cursor IDE]
-    Arch_MCP_Server[Arch Diagram MCP Server]
-    Local_Git_Repo[Local Git Repository]
-    Project_FS[Project Filesystem]
-    Cursor_Agent_CLI[Cursor Agent CLI]
-    Model_Provider_API[Model Provider API]
+    Developer_User[Developer User]
+    Archy_CLI[Archy CLI]
+    Git_Repository[Local Git Repository]
+    CursorAgent_CLI[Cursor Agent CLI]
+    FabricAI_CLI[Fabric AI CLI]
+    Local_File_System[Local File System]
+    Patterns_Directory[Patterns Directory]
 
-    Developer --> Cursor_IDE
-    Cursor_IDE --> Arch_MCP_Server
-    Arch_MCP_Server --> Project_FS
-    Arch_MCP_Server --> Local_Git_Repo
-    Arch_MCP_Server --> Cursor_Agent_CLI
-    Cursor_Agent_CLI --> Model_Provider_API
+    Developer_User --> Archy_CLI
+    Archy_CLI --> Git_Repository
+    Archy_CLI --> CursorAgent_CLI
+    Archy_CLI --> FabricAI_CLI
+    Archy_CLI --> Local_File_System
+    Archy_CLI --> Patterns_Directory
 ```
 
-[Updated] Removed GitHub Pattern Repository and related link since patterns are now local and versioned in repository.  
-[Updated] Egress constrained to model provider only; no network calls for pattern retrieval.  
-[Updated] No topology changes from stricter patterns; behavior change is validation and guidance within local pattern content.
-
-| Name | Type | Description | Responsibilities | Security controls |
-|---|---|---|---|---|
-| Developer | Person | Engineer generating architecture docs | Triggers create or update flows | Local-only execution; explicit confirmation for writes |
-| Cursor IDE | External System | IDE integrating MCP client | Hosts MCP connection and UI | Sandboxed tool execution, user consent |
-| Arch Diagram MCP Server | System | Local FastMCP server exposing tools | Orchestrates scripts, validates inputs, reports progress | No shell expansion, timeouts, stderr capture |
-| Local Git Repository | External System | Repo on disk | Provides code and diffs | Read-mostly, controlled write of docs |
-| Project Filesystem | External System | Project directories and tmp | Stores generated docs and intermediates | Path allowlist, atomic writes |
-| Cursor Agent CLI | External System | CLI to model provider | Generates document content from prompts | Egress policy, key isolation |
-| Model Provider API | External System | LLM endpoint | Text generation | TLS, token-based auth, rate limits |
-
-[Updated] Removed GitHub Pattern Repository row due to deprecation of remote fetch.
+Name | Type | Description | Responsibilities | Security controls
+--- | --- | --- | --- | ---
+Developer User | Person | Engineer running the tool locally | Invokes commands, reviews outputs | Local environment hygiene
+Archy CLI | System | Typer-based CLI for architecture generation | Analyze code, call AI backends, write docs | Path validation, write checks, timeouts, dry-run
+Local Git Repository | External System | Repo analyzed via GitPython | Change detection, tracked files listing | Read-only access from tool
+Cursor Agent CLI | External System | cursor-agent binary used as AI backend | Generate docs from prompts | Timeouts, version governance recommended
+Fabric AI CLI | External System | fabric-ai binary used as AI backend | Local model generation | Timeouts, local-only option
+Local File System | External System | Project files and outputs | Read code, write arch.md | Write permission validation
+Patterns Directory | External System | patterns/*.md prompt templates | Provide analysis patterns | Read-only access
 
 ### C4 CONTAINER
-
 ```mermaid
-flowchart TB
-    Cursor_Client[Cursor IDE MCP Client]
-    MCP_Server[FastMCP Server Python]
-    Tools_Module[Tool Handlers Fresh Update Test]
-    Arch_Orchestrator[arch sh Orchestrator]
-    Archy_CLI[archy CLI Command]
-    CLI_Wrappers[CLI Wrappers Create Update Test]
-    Patterns_Library[Patterns Markdown Local]
-    Config_Generator[Cursor MCP Config Generator]
-    Git_CLI[Git CLI]
-    jq_CLI[jq CLI]
-    Cursor_Agent[Cursor Agent CLI]
-    File_System[Local Filesystem]
-    Model_API[Model Provider API]
+flowchart LR
+    Typer_App[Typer CLI App]
+    Architecture_Analyzer[ArchitectureAnalyzer]
+    Archy_Config[ArchyConfig and ArchySettings]
+    Git_Repository_Client[GitRepository Client]
+    GitPython_Library[GitPython Library]
+    Pattern_Manager[PatternManager]
+    AI_Backend_Factory[AI Backend Factory]
+    CursorAgent_Backend[CursorAgentBackend]
+    Fabric_Backend[FabricBackend]
+    Architecture_Document[ArchitectureDocument]
+    Rich_Console[Rich Console]
+    Tree_Command[tree Command]
+    Local_File_System[Local File System]
+    CursorAgent_CLI_Binary[cursor-agent Binary]
+    Fabric_AI_CLI_Binary[fabric-ai Binary]
+    Patterns_Directory[Patterns Directory]
 
-    Cursor_Client --> MCP_Server
-    MCP_Server --> Tools_Module
-    Tools_Module --> Arch_Orchestrator
-    Tools_Module --> File_System
-    CLI_Wrappers --> Arch_Orchestrator
-    Archy_CLI --> Arch_Orchestrator
-    Arch_Orchestrator --> Git_CLI
-    Arch_Orchestrator --> jq_CLI
-    Arch_Orchestrator --> Cursor_Agent
-    Arch_Orchestrator --> Patterns_Library
-    Arch_Orchestrator --> File_System
-    Config_Generator --> File_System
-    Cursor_Agent --> Model_API
+    Typer_App --> Archy_Config
+    Typer_App --> Architecture_Analyzer
+    Typer_App --> Rich_Console
+
+    Architecture_Analyzer --> Git_Repository_Client
+    Git_Repository_Client --> GitPython_Library
+
+    Architecture_Analyzer --> Pattern_Manager
+    Pattern_Manager --> Patterns_Directory
+
+    Architecture_Analyzer --> AI_Backend_Factory
+    AI_Backend_Factory --> CursorAgent_Backend
+    AI_Backend_Factory --> Fabric_Backend
+    CursorAgent_Backend --> CursorAgent_CLI_Binary
+    Fabric_Backend --> Fabric_AI_CLI_Binary
+
+    Architecture_Analyzer --> Tree_Command
+    Tree_Command --> Local_File_System
+
+    Architecture_Analyzer --> Architecture_Document
+    Architecture_Document --> Local_File_System
 ```
 
-[Updated] Added arch sh orchestrator, archy CLI, and CLI wrappers nodes and flows.  
-[Updated] Removed curl CLI and GitHub Pattern Source; patterns are read locally.  
-[Updated] Explicitly modeled jq CLI as part of normalization and parsing.  
-[Updated] Legacy fetch scripts removed: cli/fetch_pattern.sh and scripts/fetch_fabric_pattern.sh are no longer part of the system.  
-[Updated] Patterns in Patterns_Library now encode strict C4 and Mermaid rules to guide Tools_Module and Arch_Orchestrator output normalization; no new containers added.
-
-| Name | Type | Description | Responsibilities | Security controls |
-|---|---|---|---|---|
-| FastMCP Server Python | Container | Python process using fastmcp | Runs MCP runtime, routes tool calls | Structured logs, no stdin to child processes |
-| Tool Handlers Fresh Update Test | Container | Async tool functions | Validate args, orchestrate fresh and update flows, report progress | Input validation, bounded execution |
-| arch sh Orchestrator | Container | Unified bash orchestrator | Collect diffs, select backend, normalize outputs, validate paths, write docs | set -euo pipefail, path allowlist, temp isolation, timeouts |
-| archy CLI Command | Container | User-facing CLI entrypoint | Provide fresh update test subcommands; forward flags to orchestrator | Limited scope execution, clear error handling |
-| CLI Wrappers Create Update Test | Container | Interactive scripts in cli directory | Prompt users and delegate to orchestrator | Minimal logic, delegated permissions |
-| Patterns Markdown Local | Container | Local pattern files in repo | Provide prompt templates and formats; encode strict C4 and Mermaid rules; prescribe fail fast guidance | Versioned in VCS, integrity via reviews; reduces prompt injection surface via constrained outputs |
-| Cursor MCP Config Generator | Container | Optional setup script | Generate MCP client config | Writes to known locations only |
-| Git CLI | External Container | System git | Diff, path resolution | Read-only by default |
-| jq CLI | External Container | JSON processor | Normalize and extract results from backend outputs | Trusted source, version pinning recommended |
-| Cursor Agent CLI | External Container | LLM client | Generate content via model provider | Egress control, API key isolation |
-| Local Filesystem | External Container | Repo and tmp dirs | Persist inputs and outputs | Atomic writes, allowlist paths |
-| Model Provider API | External Container | Cloud LLM | Text generation | TLS, auth, quotas |
-
-[Updated] Removed Shell Scripts Bash generic node in favor of explicit arch sh orchestrator.  
-[Updated] Removed curl CLI and GitHub Pattern Source rows due to local-only patterns.  
-[Updated] Removed legacy fetch scripts components aligned with deleted files.  
-[Updated] Clarified Patterns Markdown Local responsibilities to include strict diagram constraints; no runtime dependency changes.
+Name | Type | Description | Responsibilities | Security controls
+--- | --- | --- | --- | ---
+Typer CLI App | Container | Entry-point commands fresh, update, test, version | UX, args parsing, progress, output | No args implies help, safe defaults
+ArchyConfig and ArchySettings | Container | Pydantic models and env settings | Validate paths, set derived paths, defaults | Regex guards, traversal blocks, write checks
+ArchitectureAnalyzer | Container | Orchestration of analysis | Git analysis, prompt assembly, backend call, save | Timeouts propagation, cleaning responses
+GitRepository Client | Container | Wrapper over GitPython | Branch detection, changed/tracked files | Avoid shell, controlled filters
+PatternManager | Container | Pattern template loader | Load create/update patterns | Read-only, caching
+AI Backend Factory | Container | Chooses backend | Create CursorAgentBackend or FabricBackend | Unknown backend rejection
+CursorAgentBackend | Container | cursor-agent integration | Build CLI command, parse response | Dry-run support, timeouts
+FabricBackend | Container | fabric-ai integration | Pipe prompt to CLI, parse output | Dry-run support, timeouts
+ArchitectureDocument | Container | Document encapsulation | Save content to arch file | Overwrite protection via write checks
+Rich Console | External Library | Terminal UI | Progress, tables, status | N/A
+tree Command | External Tool | Directory listing | Fallback to simple listing | Timeout, error handling
+Local File System | External System | Storage | Read code, write docs | Write permission validation
+GitPython Library | External Library | Git operations | Repo introspection | N/A
+cursor-agent Binary | External Tool | AI generation | Execute external backend | Timeouts, version governance
+fabric-ai Binary | External Tool | AI generation | Execute external backend | Timeouts, local model
 
 ### C4 DEPLOYMENT
-
 ```mermaid
 flowchart TB
-    Dev_Machine[Developer Laptop macOS]
-    Cursor_IDE_Process[Cursor IDE Process]
-    MCP_Server_Process[Arch MCP Server Python Process]
-    Archy_Command[archy CLI Command]
-    Arch_Orchestrator_Process[arch sh Process]
-    Git_Binary[Git Binary]
-    Cursor_Agent_Binary[Cursor Agent Binary]
-    jq_Binary[jq Binary]
-    Bash_Shell[Bash Shell]
-    Repo_Directory[Project Repository Directory]
-    Tmp_Directory[tmp Working Directory]
-    Arch_File[Architecture Document File]
-    Cloud_Model_API[Model Provider Cloud API]
+    Developer_Mac[Developer macOS Device]
+    Python_Runtime[Python Runtime]
+    Virtual_Env[Virtual Environment]
+    Archy_Package[Archy Python Package]
+    CursorAgent_CLI[cursor-agent CLI]
+    FabricAI_CLI[fabric-ai CLI]
+    Local_Git_Repo[Local Git Repository]
+    File_System[File System]
+    GitHub_Actions_CI[GitHub Actions CI Workflow ci.yml]
+    Publish_PyPI_Workflow[GitHub Publish PyPI Workflow publish-pypi.yml]
+    PyPI_Registry[PyPI Registry]
 
-    Dev_Machine --> Cursor_IDE_Process
-    Dev_Machine --> MCP_Server_Process
-    Dev_Machine --> Archy_Command
-    Dev_Machine --> Git_Binary
-    Dev_Machine --> Cursor_Agent_Binary
-    Dev_Machine --> jq_Binary
-    Dev_Machine --> Bash_Shell
-    MCP_Server_Process --> Repo_Directory
-    MCP_Server_Process --> Tmp_Directory
-    MCP_Server_Process --> Bash_Shell
-    Archy_Command --> Bash_Shell
-    Bash_Shell --> Arch_Orchestrator_Process
-    Arch_Orchestrator_Process --> Git_Binary
-    Arch_Orchestrator_Process --> Cursor_Agent_Binary
-    Arch_Orchestrator_Process --> jq_Binary
-    Arch_Orchestrator_Process --> Repo_Directory
-    Repo_Directory --> Arch_File
-    Cursor_Agent_Binary --> Cloud_Model_API
+    Developer_Mac --> Python_Runtime
+    Python_Runtime --> Virtual_Env
+    Virtual_Env --> Archy_Package
+    Archy_Package --> Local_Git_Repo
+    Archy_Package --> File_System
+    Archy_Package --> CursorAgent_CLI
+    Archy_Package --> FabricAI_CLI
+
+    GitHub_Actions_CI --> Publish_PyPI_Workflow
+    Publish_PyPI_Workflow --> PyPI_Registry
+
+    Virtual_Env --> PyPI_Registry
 ```
 
-[Updated] Added archy CLI command and arch sh process; removed curl binary and GitHub cloud.  
-[Updated] Network egress limited to model provider via cursor agent binary.  
-[Updated] Removed legacy pattern fetch processes to align with local-only pattern sourcing.  
-[Updated] No deployment topology changes from stricter patterns; constraints are documentation content in Repo_Directory.
-
-| Name | Type | Description | Responsibilities | Security controls |
-|---|---|---|---|---|
-| Developer Laptop macOS | Node | Local workstation | Host IDE, server, CLIs | OS hardening, EDR |
-| Cursor IDE Process | Process | IDE with MCP client | User interface and tool runner | Sandboxing, consent |
-| Arch MCP Server Python Process | Process | FastMCP server | Orchestrate tools and scripts | Limited privileges, resource limits |
-| archy CLI Command | Runtime | Local shell command | Entry for users to run fresh update test | Minimal privileges, clear exit codes |
-| arch sh Process | Process | Orchestrator script process | Diff, prompt assembly, backend calls, output writing | set -euo pipefail, path checks, temp isolation |
-| Git Binary | Runtime | System git | Diffs and repo introspection | Read-only operations |
-| Cursor Agent Binary | Runtime | External CLI | LLM interaction | Network policy, token isolation |
-| jq Binary | Runtime | JSON processor | Normalize backend outputs | Trusted source |
-| Bash Shell | Runtime | Shell environment | Execute scripts | set -euo pipefail |
-| Project Repository Directory | Storage | Source code and docs | Inputs and outputs | Access controls |
-| tmp Working Directory | Storage | Ephemeral temp | Prompts and responses | Cleanup policy |
-| Architecture Document File | Artifact | Generated doc | Final deliverable | Atomic writes |
-| Model Provider Cloud API | Service | Cloud LLM | Text generation | TLS, API keys |
-
-[Updated] Removed curl binary and GitHub cloud rows; no remote pattern retrieval in runtime.  
-[Updated] Eliminated fetch script binaries from deployment due to file deletions.  
-[Updated] Document content now encodes strict diagram constraints; no new binaries introduced.
+Name | Type | Description | Responsibilities | Security controls
+--- | --- | --- | --- | ---
+Developer macOS Device | Node | Local environment running the CLI | Execute analysis and write docs | OS user permissions
+Python Runtime | Runtime | Python 3.9+ interpreter | Run archy package | Virtualenv isolation
+Virtual Environment | Runtime | venv or equivalent | Dependency isolation | Pin versions, lockfiles if used
+Archy Python Package | Artifact | Installed from PyPI | Provides CLI and modules | Integrity via PyPI publish workflow
+cursor-agent CLI | Binary | External backend | AI generation | Version and checksum governance
+fabric-ai CLI | Binary | External backend | Local model generation | Prefer offline, version governance
+Local Git Repository | Data | Project under analysis | Source of truth | Read-only during analysis
+File System | Data | Output location for arch.md | Stores docs and prompts | Write permission checks
+GitHub Actions CI Workflow ci.yml | CI | Test, lint, type-check | Quality gates on PRs | Pin actions, minimal secrets
+GitHub Publish PyPI Workflow publish-pypi.yml | CI | Build and release | Publishes to PyPI | OIDC tokens, scoped secrets
+PyPI Registry | External Service | Package distribution | Install updates | 2FA, trusted publishing
 
 ## RISK ASSESSMENT
-
-- Critical business processes to protect: generating initial design documents; updating architecture docs from git diffs; maintaining consistent patterns; producing accurate C4 diagrams with progress and error signaling
-- Data to protect and sensitivity: source code and diffs (high, proprietary); architecture documents (medium, internal); prompts and generated outputs (medium, may summarize sensitive code); model provider credentials (high)
-- [Updated] Risk: dependency on presence and configuration of AI backend cursor agent or fabric
-- [Updated] Risk: change-driven updates only consider file types in configured globs which may omit relevant config or uncommon languages
-- [Updated] Reduced risk: removal of remote pattern fetch reduces supply chain and drift exposure
-- [Updated] New risk: stricter pattern validation increases failure rate for nonconforming diagrams; mitigated by clearer remediation guidance and local iteration before commit
+- Critical business processes: Automated architecture analysis and documentation generation; CI-driven quality and release to PyPI; deterministic regeneration from code changes.
+- Protected data: Source code, git metadata, directory structures, generated documents, AI prompts and responses. Sensitivity: internal-confidential; may incidentally include secrets if present in repo without filters.
 
 ## QUESTIONS & ASSUMPTIONS
+- Do teams require offline-only operation by default (prefer Fabric backend) for data residency compliance?
+- Are there organizational requirements for CLI provenance (signed binaries, SBOM, attestations) for cursor-agent and fabric-ai?
+- Should prompts exclude specific directories or file types beyond current EXCLUDED_PATTERNS (e.g., secrets, migrations)?
+- Is arch.md the only authorized output path, or should writes be restricted to a dedicated docs directory?
+- What retention, if any, is allowed for saved prompts on backend errors?
 
-Questions:
-- Should prompts be redacted to avoid sending file contents or secrets to external providers?
-- Which model providers are approved and what are the data retention policies?
-- Should write operations be gated by dry run and explicit confirmation or PR gates?
-- What is the default base for diffs (main, master, trunk) and should it be configurable?
-- Must remote pattern fetch be pinned to a commit or use checksums, or should we rely on local patterns only?
-- [Updated] Should the file-type globs for change analysis be expanded to include additional config formats in this repository?
-
-Assumptions:
-- Runs locally with no exposed network service beyond MCP client connection
-- cursor agent, git, jq, curl are available and managed by the developer environment
-- Generated docs are intended to be committed to the repository
-- Patterns are primarily sourced locally; remote fetch is optional and pinned when enabled
-- Monorepo support via subfolder targeting; Python 3.10+ and macOS environment
-- [Updated] Primary execution path uses local patterns and archy CLI with arch sh orchestrator for both fresh and update flows
-- [Updated] Legacy fetch scripts removed; arch.sh and archy underwent readability refactors without changing external interfaces
-- [Updated] Patterns now encode strict C4 and Mermaid rules to standardize outputs; no new services or infrastructure were added
+Assumptions
+- Developers run archy in writable project directories with standard git layout.
+- External backends are installed and available on PATH when selected.
+- CI uses protected branches and standard GitHub Actions hardening; PyPI publish uses trusted publishing or scoped tokens.
+- No network egress restrictions are enforced by default; organizations may tighten when using remote backends.
