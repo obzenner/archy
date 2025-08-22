@@ -38,7 +38,7 @@ class CursorAgentBackend(AIBackend):
         # In dry-run mode, always return True to avoid external command dependencies
         if self.config.dry_run:
             return True
-            
+
         try:
             result = self._run_command(["cursor-agent", "--version"], timeout=10)
             return result.returncode == 0
@@ -132,7 +132,7 @@ class CursorAgentBackend(AIBackend):
     ) -> AIResponse:
         """Test cursor-agent with a simple message."""
         try:
-            # In dry-run mode, return mock response immediately  
+            # In dry-run mode, return mock response immediately
             if self.config.dry_run:
                 return AIResponse(
                     content="Mock test response from cursor-agent (dry-run mode)",
@@ -141,7 +141,7 @@ class CursorAgentBackend(AIBackend):
                     processing_time=0.1,
                     metadata={"mock": True, "dry_run": True},
                 )
-                
+
             if not self.is_available():
                 return AIResponse(
                     content="cursor-agent command not found. Install from: https://cursor.com/cli",

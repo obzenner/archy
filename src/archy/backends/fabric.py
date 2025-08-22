@@ -37,7 +37,7 @@ class FabricBackend(AIBackend):
         # In dry-run mode, always return True to avoid external command dependencies
         if self.config.dry_run:
             return True
-            
+
         try:
             # Try to run fabric-ai with --version or --help
             result = self._run_command(["fabric-ai", "--help"], timeout=10)
@@ -142,7 +142,7 @@ class FabricBackend(AIBackend):
     ) -> AIResponse:
         """Test fabric-ai with a simple message."""
         try:
-            # In dry-run mode, return mock response immediately  
+            # In dry-run mode, return mock response immediately
             if self.config.dry_run:
                 return AIResponse(
                     content="Mock test response from fabric-ai (dry-run mode)",
@@ -151,7 +151,7 @@ class FabricBackend(AIBackend):
                     processing_time=0.1,
                     metadata={"mock": True, "dry_run": True},
                 )
-                
+
             if not self.is_available():
                 return AIResponse(
                     content="fabric-ai command not found. Install from: https://github.com/danielmiessler/fabric",
