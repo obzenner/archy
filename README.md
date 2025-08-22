@@ -1,4 +1,6 @@
-# Archy 🏛️
+# Archy 🏛️ WIP
+
+NOTE: This tool is a wrapper around amazing tools like Fabric and Cursor Agent and is created to simplify DX when building and updating diagrams for projects.
 
 **Intelligent Architecture Documentation CLI** - Generate C4 architecture diagrams and documentation from your codebase using AI.
 
