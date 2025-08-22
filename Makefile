@@ -6,17 +6,18 @@ SHELL=bash
 help:
 	@echo "Archy: 🏛️ Intelligent Architecture Documentation CLI 🏛️"
 	@echo ""
-	@echo "Installation:"
-	@echo "  make setup-cli        - Install 'archy' command globally (interactive)"
-	@echo "  make uninstall-cli    - Remove 'archy' command from system"
+	@echo "Python Installation (Recommended):"
+	@echo "  make install          - Install archy CLI in development mode"
+	@echo "  make install-user     - Install archy CLI for current user only"
+	@echo "  make install-dev      - Install in development mode with testing tools"
+	@echo "  make uninstall        - Remove archy CLI from system"
 	@echo ""
-	@echo "CLI Tools (interactive):"
-	@echo "  make create-arch      - Create architecture doc (with prompts)"
-	@echo "  make update-arch      - Update architecture doc (with prompts)"
+	@echo "Development:"
+	@echo "  make test             - Run all tests"
+	@echo "  make lint             - Run code linting and formatting"
+	@echo "  make format           - Format code with black and ruff"
+	@echo ""
 
-	@echo "  make examples         - Show usage examples and workflows"
-	@echo "  make test-ai          - Test AI backend with simple message"
-	@echo ""
 	@echo "Usage after installation:"
 	@echo "  archy --help          - Show all CLI options"
 	@echo "  archy fresh           - Create fresh architecture doc"
@@ -24,49 +25,76 @@ help:
 	@echo "  archy update          - Update from git changes"
 	@echo "  archy update -t fabric - Update with fabric backend"
 	@echo "  archy test -t fabric  - Test fabric backend"
+	@echo "  archy version         - Show version information"
 	@echo ""
 	@echo "AI Backend Selection (use -t flag for all commands):"
 	@echo "  -t cursor-agent       - Use cursor-agent backend (default)"
 	@echo "  -t fabric             - Use fabric backend (supports local models)"
 
-# Pure bash CLI tools - no Python setup required
+## Python Installation Commands
 
-.PHONY: test-scripts
-test-scripts:
-	@echo "Testing if required commands are available..."
-	@command -v curl >/dev/null || (echo "ERROR: curl not found" && exit 1)
-	@command -v jq >/dev/null || (echo "ERROR: jq not found" && exit 1)
-	@echo "Checking AI backends..."
-	@BACKEND=$${ARCHY_AI_BACKEND:-cursor-agent}; \
-	if [ "$$BACKEND" = "cursor-agent" ]; then \
-		command -v cursor-agent >/dev/null || (echo "ERROR: cursor-agent not found. Install from: https://cursor.com/cli" && exit 1); \
-		echo "SUCCESS: cursor-agent found"; \
-	elif [ "$$BACKEND" = "fabric" ]; then \
-		command -v fabric-ai >/dev/null || (echo "ERROR: fabric-ai not found. Install from: https://github.com/danielmiessler/Fabric" && exit 1); \
-		echo "SUCCESS: fabric-ai found"; \
-	else \
-		echo "ERROR: Unknown AI backend: $$BACKEND (supported: cursor-agent, fabric)"; \
-		exit 1; \
-	fi
-	@echo "SUCCESS: All required commands available"
+.PHONY: install
+install:
+	@echo "🏛️ Installing Archy in development mode..."
+	pip install -e .
+	@echo "✅ Installation complete! Run 'archy --help' to get started."
+
+.PHONY: install-user  
+install-user:
+	@echo "🏛️ Installing Archy for current user..."
+	pip install --user .
+	@echo "✅ Installation complete! Run 'archy --help' to get started."
+	@echo "💡 Make sure ~/.local/bin is in your PATH"
+
+.PHONY: install-dev
+install-dev:
+	@echo "🏛️ Installing Archy in development mode with dev dependencies..."
+	pip install -e ".[dev]"
+	@echo "✅ Development installation complete!"
+
+.PHONY: uninstall
+uninstall:
+	@echo "🗑️ Uninstalling Archy..."
+	pip uninstall -y archy || echo "Archy not installed via pip"
+	@echo "✅ Uninstall complete!"
+
+## Development Commands
 
 .PHONY: test
-test: test-scripts
-	@echo "SUCCESS: All tests passed!"
+test:
+	@echo "🧪 Running tests..."
+	pytest tests/ -v
 
-.PHONY: test-ai
-test-ai:
-	@./cli/test_ai.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+.PHONY: test-coverage
+test-coverage:
+	@echo "🧪 Running tests with coverage..."
+	pytest tests/ --cov=src/archy --cov-report=term-missing
 
-## CLI Tools - Interactive Architecture Generation
+.PHONY: lint
+lint:
+	@echo "🔍 Running linting..."
+	ruff check src/ tests/
+	mypy src/
 
-.PHONY: create-arch
-create-arch:
-	@./cli/create_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+.PHONY: format
+format:
+	@echo "✨ Formatting code..."
+	black src/ tests/
+	ruff format src/ tests/
 
-.PHONY: update-arch
-update-arch:
-	@./cli/update_arch.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
+.PHONY: format-check
+format-check:
+	@echo "🔍 Checking code formatting..."
+	black --check src/ tests/
+	ruff format --check src/ tests/
+
+
+
+
+
+
+
+
 
 
 
@@ -104,26 +132,15 @@ examples:
 	@echo "   archy fresh                           - Will use fabric"
 	@echo "   archy update                          - Will use fabric"
 	@echo ""
-	@echo "Pure bash CLI tools - no server needed!"
+	@echo "Modern Python CLI - clean and reliable!"
 	@echo ""
 	@echo "Available commands:"
-	@echo "   • archy fresh [-t tool]   - Fresh architecture analysis (--fresh mode)"
-	@echo "   • archy update [-t tool]  - Update from git changes (default mode)" 
+	@echo "   • archy fresh [-t tool]   - Fresh architecture analysis"
+	@echo "   • archy update [-t tool]  - Update from git changes" 
 	@echo "   • archy test [-t tool]    - Test AI backend connectivity"
-	@echo ""
-	@echo "Direct script usage:"
-	@echo "   ARCHY_AI_BACKEND=fabric ./scripts/arch.sh --fresh [path]  - Fresh analysis with fabric"
-	@echo "   ARCHY_AI_BACKEND=cursor ./scripts/arch.sh [path]          - Git changes with cursor-agent"
+	@echo "   • archy version           - Show version information"
 
-## CLI Installation
 
-.PHONY: setup-cli
-setup-cli:
-	@chmod +x cli/setup_cli.sh && ./cli/setup_cli.sh
-
-.PHONY: uninstall-cli
-uninstall-cli:
-	@./cli/uninstall_cli.sh || (echo "Run 'make setup-cli' first to set up permissions" && exit 1)
 
 .PHONY: clean
 clean:
