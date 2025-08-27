@@ -55,6 +55,10 @@ class ArchyConfig(BaseModel):
     dry_run: bool = Field(
         default=False, description="Run in dry-run mode with mock AI responses"
     )
+    extend_pattern_path: Optional[Path] = Field(
+        default=None,
+        description="Path to pattern file that extends the built-in pattern",
+    )
 
     # Derived paths (computed after validation)
     project_path_abs: Optional[Path] = Field(default=None, exclude=True)
@@ -153,6 +157,27 @@ class ArchyConfig(BaseModel):
         # Security: Only allow safe characters
         if not re.match(r"^[a-zA-Z0-9._-]+$", v):
             raise ArchySecurityError(f"Invalid characters in filename: {v}")
+
+        return v
+
+    @field_validator("extend_pattern_path")
+    @classmethod
+    def validate_extend_pattern_path(cls, v: Optional[Path]) -> Optional[Path]:
+        """Validate extension pattern path for existence."""
+        if v is None:
+            return v
+
+        # Convert to absolute path for validation
+        try:
+            abs_path = v.resolve()
+            if not abs_path.exists():
+                raise ArchyConfigError(f"Extension pattern file not found: {v}")
+            if not abs_path.is_file():
+                raise ArchyConfigError(f"Extension pattern path is not a file: {v}")
+        except Exception as e:
+            if isinstance(e, ArchyConfigError):
+                raise
+            raise ArchyConfigError(f"Invalid extension pattern path: {v}") from e
 
         return v
 

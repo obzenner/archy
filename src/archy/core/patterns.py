@@ -19,8 +19,12 @@ class PatternManager:
     analyze codebases and generate architecture documentation.
     """
 
-    def __init__(self, patterns_dir: Optional[Path] = None):
-        """Initialize pattern manager with patterns directory."""
+    def __init__(
+        self,
+        patterns_dir: Optional[Path] = None,
+        extend_pattern_path: Optional[Path] = None,
+    ):
+        """Initialize pattern manager with patterns directory and optional extension pattern."""
         if patterns_dir is None:
             # Default to patterns directory relative to script location
             current_dir = Path(__file__).parent
@@ -28,6 +32,7 @@ class PatternManager:
         else:
             self.patterns_dir = patterns_dir
 
+        self.extend_pattern_path = extend_pattern_path
         self._pattern_cache: dict[str, str] = {}
 
     def load_pattern(self, pattern_name: str) -> str:
@@ -63,13 +68,44 @@ class PatternManager:
         except Exception as e:
             raise ArchyError(f"Failed to load pattern {pattern_name}: {e}") from e
 
+    def _load_extension_pattern(self) -> Optional[str]:
+        """Load extension pattern file if provided."""
+        if not self.extend_pattern_path:
+            return None
+
+        try:
+            with open(self.extend_pattern_path, encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception as e:
+            raise ArchyError(
+                f"Failed to load extension pattern {self.extend_pattern_path}: {e}"
+            ) from e
+
     def get_create_pattern(self) -> str:
         """Get the pattern for creating fresh architecture documentation."""
-        return self.load_pattern("create_design_document_pattern")
+        built_in_pattern = self.load_pattern("create_design_document_pattern")
+        extension_pattern = self._load_extension_pattern()
+
+        if extension_pattern:
+            # Prepend extension pattern to built-in pattern
+            return (
+                f"{extension_pattern}\n\n# BASE PATTERN FOLLOWS\n\n{built_in_pattern}"
+            )
+
+        return built_in_pattern
 
     def get_update_pattern(self) -> str:
         """Get the pattern for updating existing architecture documentation."""
-        return self.load_pattern("update_arch_diagram_pattern")
+        built_in_pattern = self.load_pattern("update_arch_diagram_pattern")
+        extension_pattern = self._load_extension_pattern()
+
+        if extension_pattern:
+            # Prepend extension pattern to built-in pattern
+            return (
+                f"{extension_pattern}\n\n# BASE PATTERN FOLLOWS\n\n{built_in_pattern}"
+            )
+
+        return built_in_pattern
 
     def create_fresh_prompt(
         self,
@@ -140,5 +176,22 @@ Git Information:
         return f"{pattern}\n{input_data}"
 
 
-# Global pattern manager instance
-pattern_manager = PatternManager()
+# Global pattern manager instance management
+_pattern_manager_instance: Optional[PatternManager] = None
+
+
+def get_pattern_manager(extend_pattern_path: Optional[Path] = None) -> PatternManager:
+    """Get or create pattern manager instance."""
+    global _pattern_manager_instance
+
+    # Create new instance if extension pattern is provided or no instance exists
+    if extend_pattern_path or _pattern_manager_instance is None:
+        _pattern_manager_instance = PatternManager(
+            extend_pattern_path=extend_pattern_path
+        )
+
+    return _pattern_manager_instance
+
+
+# For backward compatibility
+pattern_manager = get_pattern_manager()

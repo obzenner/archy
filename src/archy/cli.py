@@ -69,6 +69,11 @@ def fresh(
         "--dry-run",
         help="Validate configuration and show what would be done without running analysis",
     ),
+    extend: Optional[Path] = typer.Option(
+        None,
+        "--extend",
+        help="Path to pattern file that extends the built-in create pattern",
+    ),
 ) -> None:
     """
     Create fresh architecture documentation from complete codebase analysis.
@@ -97,6 +102,7 @@ def fresh(
                 ai_backend=backend,
                 fresh_mode=True,
                 dry_run=dry_run,
+                extend_pattern_path=extend,
             )
             progress.update(task, completed=True)
 
@@ -166,6 +172,11 @@ def update(
         "--dry-run",
         help="Validate configuration and show what would be done without running analysis",
     ),
+    extend: Optional[Path] = typer.Option(
+        None,
+        "--extend",
+        help="Path to pattern file that extends the built-in update pattern",
+    ),
 ) -> None:
     """
     Update architecture documentation based on git changes.
@@ -193,6 +204,7 @@ def update(
                 ai_backend=backend,
                 fresh_mode=False,  # Update mode
                 dry_run=dry_run,
+                extend_pattern_path=extend,
             )
             progress.update(task, completed=True)
 

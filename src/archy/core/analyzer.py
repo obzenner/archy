@@ -14,7 +14,6 @@ from ..backends.base import AIBackendConfig, clean_architecture_response, get_ba
 from ..exceptions import ArchyAIBackendError, ArchyError
 from .config import ArchyConfig
 from .git_ops import GitAnalysis, GitChange, GitRepository
-from .patterns import pattern_manager
 
 
 class ArchitectureDocument:
@@ -53,6 +52,11 @@ class ArchitectureAnalyzer:
 
         self.git_repo = GitRepository(config.project_path, dry_run=config.dry_run)
         self._git_analysis: Optional[GitAnalysis] = None
+
+        # Initialize pattern manager with extension pattern if provided
+        from .patterns import get_pattern_manager
+
+        self.pattern_manager = get_pattern_manager(config.extend_pattern_path)
 
         # Initialize AI backend
         try:
@@ -125,7 +129,7 @@ class ArchitectureAnalyzer:
 
         # Step 4: Create the complete prompt
         self._update_progress("📋 Creating AI prompt from pattern template...")
-        prompt = pattern_manager.create_fresh_prompt(
+        prompt = self.pattern_manager.create_fresh_prompt(
             project_name=self.config.project_name,  # type: ignore[arg-type]
             analysis_target=self.config.analysis_target_abs,  # type: ignore[arg-type]
             tracked_files=self.git_analysis.all_tracked_files,
@@ -326,7 +330,7 @@ You can manually process it with:
         }
 
         # Create the complete prompt using update pattern template
-        prompt = pattern_manager.create_update_prompt(
+        prompt = self.pattern_manager.create_update_prompt(
             existing_doc=existing_content,
             changes_summary=changes_summary,
             git_info=git_info,
@@ -406,7 +410,7 @@ You can manually process it with:
         }
 
         # Create the complete prompt using create pattern template (focused on changes)
-        prompt = pattern_manager.create_fresh_prompt(
+        prompt = self.pattern_manager.create_fresh_prompt(
             project_name=self.config.project_name,  # type: ignore[arg-type]
             analysis_target=self.config.analysis_target_abs,  # type: ignore[arg-type]
             tracked_files=changed_file_paths,  # Focus on changed files only
