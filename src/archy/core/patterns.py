@@ -191,10 +191,10 @@ Git Information:
     def create_distributed_prompt(self, multi_pr_analysis) -> str:
         """
         Create a complete prompt for distributed system analysis using the pattern template.
-        
+
         Args:
             multi_pr_analysis: MultiPRAnalysis object from git_ops.py
-            
+
         Returns:
             Complete prompt for AI analysis
         """
@@ -221,20 +221,20 @@ Git Information:
 """
             if pr_diff.description:
                 input_data += f"**Description**: {pr_diff.description}\n"
-            
+
             if pr_diff.focus_areas:
                 input_data += f"**Focus Areas**: {', '.join(pr_diff.focus_areas)}\n"
-            
+
             input_data += f"**Files Changed**: {pr_diff.total_changes}\n"
-            
+
             # List changed files (limit to avoid overwhelming prompt)
             input_data += "\n**Key File Changes**:\n"
             for change in pr_diff.changes[:10]:  # Limit to first 10 files
                 input_data += f"- {change.change_type.title()}: {change.file_path} (+{change.lines_added}/-{change.lines_removed})\n"
-            
+
             if len(pr_diff.changes) > 10:
                 input_data += f"... and {len(pr_diff.changes) - 10} more files\n"
-                
+
             # Add the actual PR diff content for AI analysis
             if pr_diff.raw_diff.strip():
                 input_data += f"\n**Full PR Diff**:\n```diff\n{pr_diff.raw_diff}\n```\n"
@@ -246,9 +246,14 @@ Git Information:
 ### DETECTED CROSS-SERVICE PATTERNS
 
 """
-            for pattern_type, patterns in multi_pr_analysis.cross_service_patterns.items():
+            for (
+                pattern_type,
+                patterns,
+            ) in multi_pr_analysis.cross_service_patterns.items():
                 input_data += f"**{pattern_type.replace('_', ' ').title()}**:\n"
-                for cross_pattern in patterns:  # Fixed: renamed from 'pattern' to 'cross_pattern'
+                for (
+                    cross_pattern
+                ) in patterns:  # Fixed: renamed from 'pattern' to 'cross_pattern'
                     input_data += f"- {cross_pattern}\n"
                 input_data += "\n"
 
