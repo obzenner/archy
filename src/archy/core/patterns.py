@@ -188,7 +188,7 @@ Git Information:
         # The pattern ends with "# INPUT:" - append our actual data
         return f"{pattern}\n{input_data}"
 
-    def create_distributed_prompt(self, multi_pr_analysis) -> str:
+    def create_distributed_prompt(self, multi_pr_analysis: Any) -> str:
         """
         Create a complete prompt for distributed system analysis using the pattern template.
 
@@ -241,7 +241,7 @@ Git Information:
 
         # Add cross-service patterns
         if multi_pr_analysis.cross_service_patterns:
-            input_data += f"""
+            input_data += """
 
 ### DETECTED CROSS-SERVICE PATTERNS
 
@@ -259,7 +259,7 @@ Git Information:
 
         # Add service interactions
         if multi_pr_analysis.service_interactions:
-            input_data += f"""
+            input_data += """
 ### SERVICE INTERACTIONS
 
 """

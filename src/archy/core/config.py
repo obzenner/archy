@@ -9,7 +9,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -316,7 +316,7 @@ class PRSpec(BaseModel):
     number: int = Field(..., gt=0, description="PR number")
     branch: Optional[str] = Field(None, description="Target branch (optional)")
     description: Optional[str] = Field(None, description="Custom description")
-    focus_areas: List[str] = Field(
+    focus_areas: list[str] = Field(
         default_factory=list, description="Areas to focus analysis on"
     )
 
@@ -337,10 +337,10 @@ class PRSpec(BaseModel):
 class MultiPRConfig(BaseModel):
     """Configuration for multi-PR distributed system analysis."""
 
-    prs: List[PRSpec] = Field(..., min_length=1, description="List of PRs to analyze")
+    prs: list[PRSpec] = Field(..., min_length=1, description="List of PRs to analyze")
 
     @model_validator(mode="after")
-    def validate_unique_prs(self):
+    def validate_unique_prs(self) -> "MultiPRConfig":
         """Ensure no duplicate repo#number combinations."""
         seen = set()
         for pr_spec in self.prs:

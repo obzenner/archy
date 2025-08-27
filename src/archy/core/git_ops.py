@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from git import InvalidGitRepositoryError, Repo
 
@@ -73,10 +73,10 @@ class PRDiff:
     total_changes: int
     summary: str  # Brief description
     description: str = ""  # Optional detailed description
-    focus_areas: list[str] = None  # Optional focus areas
+    focus_areas: Optional[list[str]] = None  # Optional focus areas
     raw_diff: str = ""  # Full PR diff content for AI analysis
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.focus_areas is None:
             self.focus_areas = []
 
@@ -90,11 +90,11 @@ class PRDiff:
 class MultiPRAnalysis:
     """Results of multi-PR distributed system analysis."""
 
-    pr_diffs: List[PRDiff]
+    pr_diffs: list[PRDiff]
     total_services: int
     total_changes: int
-    cross_service_patterns: Dict[str, List[str]]
-    service_interactions: Dict[str, Dict[str, List[str]]]
+    cross_service_patterns: dict[str, list[str]]
+    service_interactions: dict[str, dict[str, list[str]]]
 
 
 class GitRepository:
@@ -424,7 +424,7 @@ class GitRepository:
         except Exception as e:
             raise ArchyGitError(f"Failed to get commit info: {e}") from e
 
-    def analyze_pull_requests(self, pr_specs: List[dict]) -> MultiPRAnalysis:
+    def analyze_pull_requests(self, pr_specs: list[dict[str, Any]]) -> MultiPRAnalysis:
         """
         Analyze multiple PRs from different repositories for distributed system patterns.
 
@@ -495,13 +495,13 @@ class GitRepository:
 
         return MultiPRAnalysis(
             pr_diffs=pr_diffs,
-            total_services=len(set(pr_diff.service_name for pr_diff in pr_diffs)),
+            total_services=len({pr_diff.service_name for pr_diff in pr_diffs}),
             total_changes=sum(pr_diff.total_changes for pr_diff in pr_diffs),
             cross_service_patterns=cross_service_patterns,
             service_interactions=service_interactions,
         )
 
-    def _get_excluded_file_patterns(self) -> List[str]:
+    def _get_excluded_file_patterns(self) -> list[str]:
         """
         Get patterns for files that should be excluded from architectural analysis.
         These files typically don't provide valuable insights for system architecture.
@@ -554,11 +554,13 @@ class GitRepository:
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
-            raise ArchyGitError(f"Failed to fetch PR {repo}#{pr_number}: {e.stderr}")
-        except subprocess.TimeoutExpired:
-            raise ArchyGitError(f"Timeout fetching PR {repo}#{pr_number}")
-        except FileNotFoundError:
-            raise ArchyGitError("GitHub CLI (gh) not found. Please install it.")
+            raise ArchyGitError(
+                f"Failed to fetch PR {repo}#{pr_number}: {e.stderr}"
+            ) from e
+        except subprocess.TimeoutExpired as e:
+            raise ArchyGitError(f"Timeout fetching PR {repo}#{pr_number}") from e
+        except FileNotFoundError as e:
+            raise ArchyGitError("GitHub CLI (gh) not found. Please install it.") from e
 
     def _parse_pr_diff(
         self,
@@ -566,8 +568,8 @@ class GitRepository:
         repo: str,
         number: int,
         description: str,
-        focus_areas: List[str],
-        excluded_patterns: List[str],
+        focus_areas: list[str],
+        excluded_patterns: list[str],
     ) -> PRDiff:
         """Parse git diff output into structured PRChange objects."""
         changes = []
@@ -638,7 +640,7 @@ class GitRepository:
         )
 
     def _should_exclude_file(
-        self, file_path: str, excluded_patterns: List[str]
+        self, file_path: str, excluded_patterns: list[str]
     ) -> bool:
         """Check if file should be excluded from architectural analysis."""
         for pattern in excluded_patterns:
@@ -647,8 +649,8 @@ class GitRepository:
         return False
 
     def _detect_cross_service_patterns(
-        self, pr_diffs: List[PRDiff]
-    ) -> Dict[str, List[str]]:
+        self, pr_diffs: list[PRDiff]
+    ) -> dict[str, list[str]]:
         """Detect API calls, shared DBs, events across services."""
         patterns = {}
 
@@ -716,8 +718,8 @@ class GitRepository:
         return patterns
 
     def _detect_service_interactions(
-        self, pr_diffs: List[PRDiff]
-    ) -> Dict[str, Dict[str, List[str]]]:
+        self, pr_diffs: list[PRDiff]
+    ) -> dict[str, dict[str, list[str]]]:
         """Detect service-to-service interactions from code changes."""
         interactions = {}
 

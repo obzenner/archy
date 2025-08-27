@@ -5,10 +5,10 @@ This module provides the command-line interface using Typer, replacing the
 bash scripts with a modern, type-safe Python CLI.
 """
 
+import json
 from pathlib import Path
 from typing import Optional
 
-import json
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -406,16 +406,16 @@ def distributed(
             console.print(f"[red]❌ Invalid JSON in --prs: {e}[/red]")
             console.print("\n[yellow]Expected format:[/yellow]")
             console.print('{"prs": [{"repo": "org/repo", "number": 123}]}')
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         except Exception as e:
-            console.print(f"[red]❌ Invalid PR specification:[/red]")
+            console.print("[red]❌ Invalid PR specification:[/red]")
             if hasattr(e, "errors"):
                 for error in e.errors():
                     field = " → ".join(str(x) for x in error["loc"])
                     console.print(f"  • {field}: {error['msg']}")
             else:
                 console.print(f"  • {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         console.print(f"📊 Found {len(multi_pr_config.prs)} PRs to analyze:")
         for pr_spec in multi_pr_config.prs:
