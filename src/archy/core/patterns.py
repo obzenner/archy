@@ -107,6 +107,19 @@ class PatternManager:
 
         return built_in_pattern
 
+    def get_distributed_pattern(self) -> str:
+        """Get the pattern for distributed system analysis."""
+        built_in_pattern = self.load_pattern("analyze_distributed_system_pattern")
+        extension_pattern = self._load_extension_pattern()
+
+        if extension_pattern:
+            # Prepend extension pattern to built-in pattern
+            return (
+                f"{extension_pattern}\n\n# BASE PATTERN FOLLOWS\n\n{built_in_pattern}"
+            )
+
+        return built_in_pattern
+
     def create_fresh_prompt(
         self,
         project_name: str,
@@ -171,6 +184,88 @@ Git Information:
 
 {changes_summary}
 """
+
+        # The pattern ends with "# INPUT:" - append our actual data
+        return f"{pattern}\n{input_data}"
+
+    def create_distributed_prompt(self, multi_pr_analysis) -> str:
+        """
+        Create a complete prompt for distributed system analysis using the pattern template.
+        
+        Args:
+            multi_pr_analysis: MultiPRAnalysis object from git_ops.py
+            
+        Returns:
+            Complete prompt for AI analysis
+        """
+        pattern = self.get_distributed_pattern()
+
+        # Build the input data formatted for distributed system analysis
+        input_data = f"""
+## MULTI-SERVICE PR ANALYSIS
+
+**Total Services**: {multi_pr_analysis.total_services}
+**Total Changes**: {multi_pr_analysis.total_changes}
+
+### SERVICE CHANGES
+
+"""
+
+        # Add each PR diff with details
+        for pr_diff in multi_pr_analysis.pr_diffs:
+            service_name = pr_diff.service_name or "UNKNOWN_SERVICE"
+            input_data += f"""
+#### {service_name.upper()} ({pr_diff.repo}#{pr_diff.number})
+
+**Summary**: {pr_diff.summary}
+"""
+            if pr_diff.description:
+                input_data += f"**Description**: {pr_diff.description}\n"
+            
+            if pr_diff.focus_areas:
+                input_data += f"**Focus Areas**: {', '.join(pr_diff.focus_areas)}\n"
+            
+            input_data += f"**Files Changed**: {pr_diff.total_changes}\n"
+            
+            # List changed files (limit to avoid overwhelming prompt)
+            input_data += "\n**Key File Changes**:\n"
+            for change in pr_diff.changes[:10]:  # Limit to first 10 files
+                input_data += f"- {change.change_type.title()}: {change.file_path} (+{change.lines_added}/-{change.lines_removed})\n"
+            
+            if len(pr_diff.changes) > 10:
+                input_data += f"... and {len(pr_diff.changes) - 10} more files\n"
+                
+            # Add the actual PR diff content for AI analysis
+            if pr_diff.raw_diff.strip():
+                input_data += f"\n**Full PR Diff**:\n```diff\n{pr_diff.raw_diff}\n```\n"
+
+        # Add cross-service patterns
+        if multi_pr_analysis.cross_service_patterns:
+            input_data += f"""
+
+### DETECTED CROSS-SERVICE PATTERNS
+
+"""
+            for pattern_type, patterns in multi_pr_analysis.cross_service_patterns.items():
+                input_data += f"**{pattern_type.replace('_', ' ').title()}**:\n"
+                for cross_pattern in patterns:  # Fixed: renamed from 'pattern' to 'cross_pattern'
+                    input_data += f"- {cross_pattern}\n"
+                input_data += "\n"
+
+        # Add service interactions
+        if multi_pr_analysis.service_interactions:
+            input_data += f"""
+### SERVICE INTERACTIONS
+
+"""
+            for service, interactions in multi_pr_analysis.service_interactions.items():
+                if interactions:  # Only show services with interactions
+                    input_data += f"**{service} interactions**:\n"
+                    for target_service, calls in interactions.items():
+                        input_data += f"  → {target_service}:\n"
+                        for call in calls:
+                            input_data += f"    - {call}\n"
+                    input_data += "\n"
 
         # The pattern ends with "# INPUT:" - append our actual data
         return f"{pattern}\n{input_data}"

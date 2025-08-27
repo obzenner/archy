@@ -8,6 +8,7 @@ bash scripts with a modern, type-safe Python CLI.
 from pathlib import Path
 from typing import Optional
 
+import json
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -15,7 +16,7 @@ from rich.table import Table
 
 from . import __version__
 from .core.analyzer import ArchitectureAnalyzer
-from .core.config import AIBackend, ArchyConfig
+from .core.config import AIBackend, ArchyConfig, MultiPRConfig
 from .exceptions import ArchyError
 
 # Create the main Typer app
@@ -333,6 +334,179 @@ def test(
         raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"[red]❌ Unexpected error: {e}[/red]")
+        raise typer.Exit(1) from None
+
+
+@app.command()
+def distributed(
+    prs: str = typer.Option(
+        ...,
+        "--prs",
+        help="JSON specification of PRs to analyze (see help for format)",
+    ),
+    output: str = typer.Option(
+        "distributed-arch.md",
+        "-o",
+        "--output",
+        help="Output filename for distributed architecture documentation",
+        show_default=True,
+    ),
+    backend: AIBackend = typer.Option(
+        AIBackend.CURSOR_AGENT,
+        "-t",
+        "--tool", 
+        help="AI backend to use for generation",
+        show_default=True,
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be done without executing",
+    ),
+    save_prompt: bool = typer.Option(
+        False,
+        "--save-prompt", 
+        help="Save generated prompt to file for debugging"
+    ),
+) -> None:
+    """
+    🌐 Analyze multiple PRs for distributed system architecture.
+    
+    This mode fetches PR diffs from multiple repositories using GitHub CLI (gh),
+    analyzes cross-service interactions, and generates system-level architecture
+    documentation focusing on service integration patterns.
+    
+    Example JSON format for --prs option:
+    
+    {
+      "prs": [
+        {
+          "repo": "funnel-io/data-in-hatchery",
+          "number": 4085,
+          "description": "Add streaming pipeline"
+        },
+        {
+          "repo": "funnel-io/web-app",
+          "number": 1234,
+          "focus_areas": ["ui", "state-management"]
+        }
+      ]
+    }
+    
+    Requirements:
+    - GitHub CLI (gh) must be installed and authenticated
+    - Access to the specified repositories
+    """
+    try:
+        console.print("🌐 Analyzing distributed system PRs...")
+        
+        # Parse and validate JSON
+        try:
+            prs_data = json.loads(prs)
+            multi_pr_config = MultiPRConfig(**prs_data)
+        except json.JSONDecodeError as e:
+            console.print(f"[red]❌ Invalid JSON in --prs: {e}[/red]")
+            console.print("\n[yellow]Expected format:[/yellow]")
+            console.print('{"prs": [{"repo": "org/repo", "number": 123}]}')
+            raise typer.Exit(1)
+        except Exception as e:
+            console.print(f"[red]❌ Invalid PR specification:[/red]")
+            if hasattr(e, 'errors'):
+                for error in e.errors():
+                    field = " → ".join(str(x) for x in error["loc"])
+                    console.print(f"  • {field}: {error['msg']}")
+            else:
+                console.print(f"  • {e}")
+            raise typer.Exit(1)
+        
+        console.print(f"📊 Found {len(multi_pr_config.prs)} PRs to analyze:")
+        for pr_spec in multi_pr_config.prs:
+            service_name = pr_spec.repo.split('/')[-1]
+            console.print(f"  • {service_name}: {pr_spec.repo}#{pr_spec.number}")
+        
+        # Create output path
+        output_path = Path(output)
+        
+        # Run distributed system analysis
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("🔧 Initializing multi-PR analyzer...", total=None)
+            
+            # Create git repository for multi-PR analysis
+            from .core.git_ops import GitRepository
+            git_repo = GitRepository(Path("."), dry_run=dry_run)
+            
+            # Convert PR specs to dict format for git_ops
+            pr_specs = [pr.model_dump() for pr in multi_pr_config.prs]
+            
+            # Analyze PRs
+            progress.update(task, description="📡 Fetching PR diffs from GitHub...")
+            multi_pr_analysis = git_repo.analyze_pull_requests(pr_specs)
+            
+            # Create distributed prompt
+            progress.update(task, description="🧠 Creating distributed system prompt...")
+            from .core.patterns import get_pattern_manager
+            pattern_manager = get_pattern_manager()
+            prompt = pattern_manager.create_distributed_prompt(multi_pr_analysis)
+            
+            # Save prompt if requested
+            if save_prompt:
+                prompt_file = output_path.with_suffix('.prompt.txt')
+                prompt_file.write_text(prompt)
+                console.print(f"[cyan]📝 Saved prompt to: {prompt_file}[/cyan]")
+            
+            # Generate documentation using AI backend
+            progress.update(task, description=f"🤖 Generating distributed architecture with {backend.value}...")
+            
+            # Create AI backend
+            from .backends.base import AIBackendConfig, get_backend
+            
+            backend_config: AIBackendConfig
+            if backend.value == "cursor-agent":
+                from .backends.cursor_agent import CursorAgentConfig
+                backend_config = CursorAgentConfig(dry_run=dry_run)
+            elif backend.value == "fabric":
+                from .backends.fabric import FabricConfig
+                backend_config = FabricConfig(dry_run=dry_run)
+            else:
+                backend_config = AIBackendConfig(dry_run=dry_run)
+                
+            ai_backend = get_backend(backend.value, backend_config)
+            
+            if not dry_run and not ai_backend.is_available():
+                console.print(f"[red]❌ Backend '{backend.value}' is not available[/red]")
+                raise typer.Exit(1)
+            
+            # Generate documentation
+            if dry_run:
+                progress.update(task, description="🔍 Dry-run: Skipping AI generation...")
+                console.print(f"[cyan]🔍 DRY-RUN: Would create {output_path}[/cyan]")
+                console.print(f"[cyan]📊 Analysis: {multi_pr_analysis.total_services} services, {multi_pr_analysis.total_changes} changes[/cyan]")
+                console.print("[green]✨ Mock distributed architecture analysis complete![/green]")
+            else:
+                response = ai_backend.generate(prompt)
+                
+                if response.success:
+                    progress.update(task, description="💾 Saving distributed architecture...")
+                    output_path.write_text(response.content)
+                    console.print(f"[green]✅ Created: {output_path}[/green]")
+                    console.print(f"[green]📊 Analyzed {multi_pr_analysis.total_services} services with {multi_pr_analysis.total_changes} total changes[/green]")
+                else:
+                    console.print(f"[red]❌ AI generation failed: {response.content}[/red]")
+                    raise typer.Exit(1)
+            
+            progress.update(task, completed=True)
+            
+    except ArchyError as e:
+        console.print(f"[red]❌ Error: {e}[/red]")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]❌ Unexpected error: {e}[/red]") 
         raise typer.Exit(1) from None
 
 
