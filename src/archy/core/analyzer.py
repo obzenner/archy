@@ -237,12 +237,17 @@ You can manually process it with:
 
         Replaces the bash update_from_git_changes() function.
         """
-        # Step 1: Get git analysis for changes
-        self._update_progress("📂 Analyzing git repository for changes...")
-        self.git_analysis = self.git_repo.analyze_repository(
-            path_filter=self.config.path_filter,
-            excluded_patterns=self.config.get_excluded_patterns(),
-        )
+        # Step 1: Get git analysis for changes (skip if already provided, e.g., from PR analysis)
+        if self._git_analysis is None:
+            self._update_progress("📂 Analyzing git repository for changes...")
+            self.git_analysis = self.git_repo.analyze_repository(
+                path_filter=self.config.path_filter,
+                excluded_patterns=self.config.get_excluded_patterns(),
+            )
+        else:
+            self._update_progress(
+                "📂 Using provided git analysis (e.g., from PR data)..."
+            )
 
         # Step 2: Check if there are any changes
         self._update_progress("🔍 Checking for relevant changes...")

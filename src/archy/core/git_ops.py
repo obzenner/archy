@@ -5,6 +5,8 @@ This module replaces all bash git commands with proper Python GitPython calls,
 providing better error handling and cross-platform compatibility.
 """
 
+import re
+import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -46,6 +48,53 @@ class GitAnalysis:
     git_root: Path
     total_changes: int
     has_changes: bool
+
+
+@dataclass
+class PRChange:
+    """Represents a single file change in a PR."""
+
+    file_path: str
+    change_type: str  # "Modified", "Added", "Deleted", "Renamed"
+    lines_added: int = 0
+    lines_removed: int = 0
+    pr_number: int = 0
+    repo: str = ""  # "funnel-io/data-in-hatchery"
+    old_path: Optional[Path] = None  # For renames
+
+
+@dataclass
+class PRDiff:
+    """Complete diff from a single PR."""
+
+    repo: str  # "funnel-io/data-in-hatchery"
+    number: int  # 4085
+    changes: list[PRChange]  # All file changes in this PR
+    total_changes: int
+    summary: str  # Brief description
+    description: str = ""  # Optional detailed description
+    focus_areas: Optional[list[str]] = None  # Optional focus areas
+    raw_diff: str = ""  # Full PR diff content for AI analysis
+
+    def __post_init__(self) -> None:
+        if self.focus_areas is None:
+            self.focus_areas = []
+
+    @property
+    def service_name(self) -> str:
+        """Derive service name from repo name."""
+        return self.repo.split("/")[-1]
+
+
+@dataclass
+class MultiPRAnalysis:
+    """Results of multi-PR distributed system analysis."""
+
+    pr_diffs: list[PRDiff]
+    total_services: int
+    total_changes: int
+    cross_service_patterns: dict[str, list[str]]
+    service_interactions: dict[str, dict[str, list[str]]]
 
 
 class GitRepository:
@@ -374,3 +423,380 @@ class GitRepository:
             }
         except Exception as e:
             raise ArchyGitError(f"Failed to get commit info: {e}") from e
+
+    def analyze_pull_requests(self, pr_specs: list[dict[str, Any]]) -> MultiPRAnalysis:
+        """
+        Analyze multiple PRs from different repositories for distributed system patterns.
+
+        Args:
+            pr_specs: List of dicts with keys: repo, number, description?, focus_areas?
+
+        Returns:
+            MultiPRAnalysis with aggregated cross-service patterns
+        """
+        if self.dry_run:
+            # Create mock PRs matching the actual PR specs provided
+            pr_diffs = []
+            total_changes = 0
+
+            for i, pr_spec in enumerate(pr_specs):
+                repo = pr_spec["repo"]
+                number = pr_spec["number"]
+                description = pr_spec.get("description", f"Mock PR {i + 1}")
+
+                # Create mock changes for each PR
+                mock_changes = [
+                    PRChange(
+                        file_path=f"src/{repo.split('/')[-1]}/api.py",
+                        change_type="Modified",
+                        lines_added=15,
+                        lines_removed=5,
+                        pr_number=number,
+                        repo=repo,
+                    ),
+                    PRChange(
+                        file_path=f"src/{repo.split('/')[-1]}/frontend/component.tsx",
+                        change_type="Added",
+                        lines_added=25,
+                        lines_removed=0,
+                        pr_number=number,
+                        repo=repo,
+                    ),
+                ]
+
+                pr_diff = PRDiff(
+                    repo=repo,
+                    number=number,
+                    changes=mock_changes,
+                    total_changes=len(mock_changes),
+                    summary=f"Mock {repo.split('/')[-1]} PR#{number}: {description} ({len(mock_changes)} files)",
+                    description=description,
+                    raw_diff=f"# Mock diff content for {repo}#{number}\ndiff --git a/src/api.py b/src/api.py\n+# Mock changes for {repo}",
+                )
+                pr_diffs.append(pr_diff)
+                total_changes += len(mock_changes)
+
+            # Count unique services
+            unique_services = len({pr["repo"] for pr in pr_specs})
+
+            return MultiPRAnalysis(
+                pr_diffs=pr_diffs,
+                total_services=unique_services,
+                total_changes=total_changes,
+                cross_service_patterns={
+                    "api_endpoints": [
+                        f"{pr['repo'].split('/')[-1]}: mock/api/endpoint"
+                        for pr in pr_specs
+                    ],
+                    "frontend_changes": [
+                        f"{pr['repo'].split('/')[-1]}: mock/frontend/component"
+                        for pr in pr_specs
+                    ],
+                },
+                service_interactions={
+                    "api_calls": {
+                        pr["repo"].split("/")[-1]: ["mock-api-interaction"]
+                        for pr in pr_specs
+                    }
+                },
+            )
+
+        pr_diffs = []
+        excluded_patterns = self._get_excluded_file_patterns()
+
+        for pr_spec in pr_specs:
+            repo = pr_spec["repo"]
+            number = pr_spec["number"]
+            description = pr_spec.get("description", "")
+            focus_areas = pr_spec.get("focus_areas", [])
+
+            try:
+                # Fetch PR diff using gh CLI
+                diff_content = self._fetch_pr_diff(repo, number)
+
+                # Parse the diff into structured data
+                pr_diff = self._parse_pr_diff(
+                    diff_content,
+                    repo,
+                    number,
+                    description,
+                    focus_areas,
+                    excluded_patterns,
+                )
+                pr_diffs.append(pr_diff)
+            except ArchyGitError as e:
+                # If PR fetch fails, create a minimal PRDiff with error info
+                pr_diff = PRDiff(
+                    repo=repo,
+                    number=number,
+                    changes=[],
+                    total_changes=0,
+                    summary=f"Failed to fetch PR: {e}",
+                    description=description,
+                    focus_areas=focus_areas,
+                    raw_diff="",
+                )
+                pr_diffs.append(pr_diff)
+
+        # Analyze cross-service patterns
+        cross_service_patterns = self._detect_cross_service_patterns(pr_diffs)
+        service_interactions = self._detect_service_interactions(pr_diffs)
+
+        return MultiPRAnalysis(
+            pr_diffs=pr_diffs,
+            total_services=len({pr_diff.service_name for pr_diff in pr_diffs}),
+            total_changes=sum(pr_diff.total_changes for pr_diff in pr_diffs),
+            cross_service_patterns=cross_service_patterns,
+            service_interactions=service_interactions,
+        )
+
+    def _get_excluded_file_patterns(self) -> list[str]:
+        """
+        Get patterns for files that should be excluded from architectural analysis.
+        These files typically don't provide valuable insights for system architecture.
+        """
+        return [
+            # Lock files and dependency manifests
+            r".*\.lock$",
+            r"yarn\.lock$",
+            r"package-lock\.json$",
+            r"Pipfile\.lock$",
+            r"poetry\.lock$",
+            r"Gemfile\.lock$",
+            r"composer\.lock$",
+            r"go\.sum$",
+            r"Cargo\.lock$",
+            # Generated/compiled files
+            r".*\.min\.(js|css)$",
+            r".*\.bundle\.(js|css)$",
+            r".*\.d\.ts$",  # TypeScript declaration files
+            r".*\.map$",  # Source maps
+            r".*\.pyc$",
+            r".*\.pyo$",
+            r".*\.class$",
+            r".*\.o$",
+            r".*\.so$",
+            r".*\.dll$",
+            # Note: We DO want swagger/openapi files for architectural analysis!
+            # Binary/media files
+            r".*\.(png|jpg|jpeg|gif|ico|svg|pdf|zip|tar|gz)$",
+            # IDE and editor files
+            r".*\.(vscode|idea|eclipse)/.*",
+            r".*\.swp$",
+            r".*\.tmp$",
+            # Test snapshots and fixtures
+            r".*/__snapshots__/.*",
+            r".*/fixtures/.*\.json$",
+            r".*/mocks/.*\.json$",
+        ]
+
+    def _fetch_pr_diff(self, repo: str, pr_number: int) -> str:
+        """Fetch PR diff using GitHub CLI."""
+        try:
+            cmd = ["gh", "pr", "diff", str(pr_number), "-R", repo]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,  # 30 second timeout
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            raise ArchyGitError(
+                f"Failed to fetch PR {repo}#{pr_number}: {e.stderr}"
+            ) from e
+        except subprocess.TimeoutExpired as e:
+            raise ArchyGitError(f"Timeout fetching PR {repo}#{pr_number}") from e
+        except FileNotFoundError as e:
+            raise ArchyGitError("GitHub CLI (gh) not found. Please install it.") from e
+
+    def _parse_pr_diff(
+        self,
+        diff_content: str,
+        repo: str,
+        number: int,
+        description: str,
+        focus_areas: list[str],
+        excluded_patterns: list[str],
+    ) -> PRDiff:
+        """Parse git diff output into structured PRChange objects."""
+        changes = []
+
+        # Split diff by file changes (each starts with "diff --git")
+        file_diffs = re.split(r"^diff --git", diff_content, flags=re.MULTILINE)
+
+        for file_diff in file_diffs[1:]:  # Skip first empty split
+            if not file_diff.strip():
+                continue
+
+            # Extract file paths
+            file_match = re.match(r" a/(.*?) b/(.*?)$", file_diff.split("\n")[0])
+            if not file_match:
+                continue
+
+            file_path = file_match.group(2)  # Use the "after" path
+            old_path = (
+                file_match.group(1)
+                if file_match.group(1) != file_match.group(2)
+                else None
+            )
+
+            # Skip excluded files
+            if self._should_exclude_file(file_path, excluded_patterns):
+                continue
+
+            # Determine change type
+            if file_diff.startswith(" /dev/null"):
+                change_type = "Added"
+            elif "/dev/null b/" in file_diff.split("\n")[0]:
+                change_type = "Deleted"
+            elif old_path:
+                change_type = "Renamed"
+            else:
+                change_type = "Modified"
+
+            # Count lines added/removed
+            lines_added = len(re.findall(r"^\+[^+]", file_diff, re.MULTILINE))
+            lines_removed = len(re.findall(r"^-[^-]", file_diff, re.MULTILINE))
+
+            changes.append(
+                PRChange(
+                    file_path=file_path,
+                    change_type=change_type,
+                    lines_added=lines_added,
+                    lines_removed=lines_removed,
+                    pr_number=number,
+                    repo=repo,
+                    old_path=Path(old_path) if old_path else None,
+                )
+            )
+
+        service_name = repo.split("/")[-1]  # Extract service name from repo
+        summary = f"Changes in {service_name}: {len(changes)} files modified"
+        if description:
+            summary = f"{description} ({len(changes)} files)"
+
+        return PRDiff(
+            repo=repo,
+            number=number,
+            changes=changes,
+            total_changes=len(changes),
+            summary=summary,
+            description=description,
+            focus_areas=focus_areas,
+            raw_diff=diff_content,  # Store the full diff content
+        )
+
+    def _should_exclude_file(
+        self, file_path: str, excluded_patterns: list[str]
+    ) -> bool:
+        """Check if file should be excluded from architectural analysis."""
+        for pattern in excluded_patterns:
+            if re.match(pattern, file_path, re.IGNORECASE):
+                return True
+        return False
+
+    def _detect_cross_service_patterns(
+        self, pr_diffs: list[PRDiff]
+    ) -> dict[str, list[str]]:
+        """Detect API calls, shared DBs, events across services."""
+        patterns = {}
+
+        # Look for API endpoints, database changes, etc.
+        api_endpoints = []
+        api_specifications = []
+        database_changes = []
+        config_changes = []
+
+        for pr_diff in pr_diffs:
+            service_name = pr_diff.service_name
+
+            for change in pr_diff.changes:
+                file_path = change.file_path.lower()
+
+                # API Specifications (HIGH PRIORITY for distributed systems)
+                if (
+                    any(
+                        keyword in file_path
+                        for keyword in ["swagger", "openapi", "api-docs"]
+                    )
+                    or file_path.endswith(".json")
+                    and "api" in file_path
+                ):
+                    lines_info = (
+                        f"(+{change.lines_added}/-{change.lines_removed})"
+                        if change.lines_added or change.lines_removed
+                        else ""
+                    )
+                    api_specifications.append(
+                        f"{service_name}: {change.file_path} {lines_info}"
+                    )
+
+                # API endpoints and routes
+                elif any(
+                    keyword in file_path
+                    for keyword in ["api", "router", "controller", "endpoint", "route"]
+                ):
+                    api_endpoints.append(f"{service_name}: {change.file_path}")
+
+                # Database changes
+                elif any(
+                    keyword in file_path
+                    for keyword in ["model", "schema", "migration", "db", "sql"]
+                ):
+                    database_changes.append(f"{service_name}: {change.file_path}")
+
+                # Config changes
+                elif any(
+                    keyword in file_path
+                    for keyword in ["config", "env", "setting", "constant"]
+                ):
+                    config_changes.append(f"{service_name}: {change.file_path}")
+
+        # Prioritize API specifications first (most important for distributed systems)
+        if api_specifications:
+            patterns["api_specifications"] = api_specifications
+        if api_endpoints:
+            patterns["api_endpoints"] = api_endpoints
+        if database_changes:
+            patterns["database_changes"] = database_changes
+        if config_changes:
+            patterns["config_changes"] = config_changes
+
+        return patterns
+
+    def _detect_service_interactions(
+        self, pr_diffs: list[PRDiff]
+    ) -> dict[str, dict[str, list[str]]]:
+        """Detect service-to-service interactions from code changes."""
+        interactions = {}
+
+        for pr_diff in pr_diffs:
+            service_name = pr_diff.service_name
+            service_interactions = {}
+
+            # Analyze diff content for service calls
+            for other_pr in pr_diffs:
+                if other_pr.service_name == service_name:
+                    continue
+
+                other_service = other_pr.service_name
+                calls = []
+
+                # Look for references to other services in the diff
+                for change in pr_diff.changes:
+                    if other_service.lower() in change.file_path.lower():
+                        calls.append(f"File reference: {change.file_path}")
+
+                # Look in raw diff content for API calls, imports, etc.
+                if other_service.lower() in pr_diff.raw_diff.lower():
+                    calls.append(f"Code references to {other_service}")
+
+                if calls:
+                    service_interactions[other_service] = calls
+
+            if service_interactions:
+                interactions[service_name] = service_interactions
+
+        return interactions

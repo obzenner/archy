@@ -309,5 +309,47 @@ class ArchySettings(BaseSettings):
     }
 
 
+class PRSpec(BaseModel):
+    """Specification for a single pull request to analyze."""
+
+    repo: str = Field(..., description="Repository in format 'org/repo'")
+    number: int = Field(..., gt=0, description="PR number")
+    branch: Optional[str] = Field(None, description="Target branch (optional)")
+    description: Optional[str] = Field(None, description="Custom description")
+    focus_areas: list[str] = Field(
+        default_factory=list, description="Areas to focus analysis on"
+    )
+
+    @field_validator("repo")
+    @classmethod
+    def validate_repo_format(cls, v: str) -> str:
+        """Ensure repo is in 'org/repo' format."""
+        if "/" not in v or len(v.split("/")) != 2:
+            raise ValueError("Repository must be in format 'org/repo'")
+
+        org, repo_name = v.split("/")
+        if not org or not repo_name:
+            raise ValueError("Both organization and repository name must be non-empty")
+
+        return v
+
+
+class MultiPRConfig(BaseModel):
+    """Configuration for multi-PR distributed system analysis."""
+
+    prs: list[PRSpec] = Field(..., min_length=1, description="List of PRs to analyze")
+
+    @model_validator(mode="after")
+    def validate_unique_prs(self) -> "MultiPRConfig":
+        """Ensure no duplicate repo#number combinations."""
+        seen = set()
+        for pr_spec in self.prs:
+            key = f"{pr_spec.repo}#{pr_spec.number}"
+            if key in seen:
+                raise ValueError(f"Duplicate PR specification: {key}")
+            seen.add(key)
+        return self
+
+
 # Global settings instance
 settings = ArchySettings()

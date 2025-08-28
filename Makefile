@@ -14,8 +14,9 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make test             - Run all tests"
-	@echo "  make lint             - Run code linting and formatting"
-	@echo "  make format           - Format code with black and ruff"
+	@echo "  make lint             - Run code linting and type checking (check only)"
+	@echo "  make format           - Format code and auto-fix issues"
+	@echo "  make fix              - Format + fix + final lint check (recommended)"
 	@echo "  make format-party     - 🎉 Format your code with STYLE! 🎉"
 	@echo ""
 	@echo "CI Testing (test locally before push):"
@@ -90,6 +91,15 @@ format:
 	@echo "✨ Formatting code..."
 	black src/ tests/
 	ruff format src/ tests/
+	@echo "🔧 Fixing auto-fixable linting issues..."
+	ruff check src/ tests/ --fix
+
+.PHONY: fix
+fix: format
+	@echo "🎯 Running final linting checks..."
+	ruff check src/ tests/
+	mypy src/
+	@echo "✅ Code is formatted and linted!"
 
 .PHONY: format-check
 format-check:
