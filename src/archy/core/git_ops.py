@@ -435,41 +435,70 @@ class GitRepository:
             MultiPRAnalysis with aggregated cross-service patterns
         """
         if self.dry_run:
-            # Create mock changes for dry-run testing
-            mock_changes = [
-                PRChange(
-                    file_path="src/example/service.py",
-                    change_type="Modified",
-                    lines_added=15,
-                    lines_removed=5,
-                    pr_number=123,
-                    repo="mock/service-1",
-                ),
-                PRChange(
-                    file_path="README.md",
-                    change_type="Modified",
-                    lines_added=3,
-                    lines_removed=1,
-                    pr_number=123,
-                    repo="mock/service-1",
-                ),
-            ]
+            # Create mock PRs matching the actual PR specs provided
+            pr_diffs = []
+            total_changes = 0
+
+            for i, pr_spec in enumerate(pr_specs):
+                repo = pr_spec["repo"]
+                number = pr_spec["number"]
+                description = pr_spec.get("description", f"Mock PR {i + 1}")
+
+                # Create mock changes for each PR
+                mock_changes = [
+                    PRChange(
+                        file_path=f"src/{repo.split('/')[-1]}/api.py",
+                        change_type="Modified",
+                        lines_added=15,
+                        lines_removed=5,
+                        pr_number=number,
+                        repo=repo,
+                    ),
+                    PRChange(
+                        file_path=f"src/{repo.split('/')[-1]}/frontend/component.tsx",
+                        change_type="Added",
+                        lines_added=25,
+                        lines_removed=0,
+                        pr_number=number,
+                        repo=repo,
+                    ),
+                ]
+
+                pr_diff = PRDiff(
+                    repo=repo,
+                    number=number,
+                    changes=mock_changes,
+                    total_changes=len(mock_changes),
+                    summary=f"Mock {repo.split('/')[-1]} PR#{number}: {description} ({len(mock_changes)} files)",
+                    description=description,
+                    raw_diff=f"# Mock diff content for {repo}#{number}\ndiff --git a/src/api.py b/src/api.py\n+# Mock changes for {repo}",
+                )
+                pr_diffs.append(pr_diff)
+                total_changes += len(mock_changes)
+
+            # Count unique services
+            unique_services = len({pr["repo"] for pr in pr_specs})
 
             return MultiPRAnalysis(
-                pr_diffs=[
-                    PRDiff(
-                        repo="mock/service-1",
-                        number=123,
-                        changes=mock_changes,
-                        total_changes=2,
-                        summary="Mock PR for testing (2 files changed)",
-                        raw_diff="# Mock diff content for testing\ndiff --git a/src/example/service.py b/src/example/service.py\n+# Mock changes",
-                    )
-                ],
-                total_services=1,
-                total_changes=2,
-                cross_service_patterns={},
-                service_interactions={},
+                pr_diffs=pr_diffs,
+                total_services=unique_services,
+                total_changes=total_changes,
+                cross_service_patterns={
+                    "api_endpoints": [
+                        f"{pr['repo'].split('/')[-1]}: mock/api/endpoint"
+                        for pr in pr_specs
+                    ],
+                    "frontend_changes": [
+                        f"{pr['repo'].split('/')[-1]}: mock/frontend/component"
+                        for pr in pr_specs
+                    ],
+                },
+                service_interactions={
+                    "api_calls": {
+                        pr["repo"].split("/")[-1]: ["mock-api-interaction"]
+                        for pr in pr_specs
+                    }
+                },
             )
 
         pr_diffs = []
