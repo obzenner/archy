@@ -435,19 +435,39 @@ class GitRepository:
             MultiPRAnalysis with aggregated cross-service patterns
         """
         if self.dry_run:
+            # Create mock changes for dry-run testing
+            mock_changes = [
+                PRChange(
+                    file_path="src/example/service.py",
+                    change_type="Modified",
+                    lines_added=15,
+                    lines_removed=5,
+                    pr_number=123,
+                    repo="mock/service-1",
+                ),
+                PRChange(
+                    file_path="README.md",
+                    change_type="Modified",
+                    lines_added=3,
+                    lines_removed=1,
+                    pr_number=123,
+                    repo="mock/service-1",
+                ),
+            ]
+
             return MultiPRAnalysis(
                 pr_diffs=[
                     PRDiff(
                         repo="mock/service-1",
                         number=123,
-                        changes=[],
-                        total_changes=0,
-                        summary="Mock PR for testing",
-                        raw_diff="# Mock diff content for testing",
+                        changes=mock_changes,
+                        total_changes=2,
+                        summary="Mock PR for testing (2 files changed)",
+                        raw_diff="# Mock diff content for testing\ndiff --git a/src/example/service.py b/src/example/service.py\n+# Mock changes",
                     )
                 ],
                 total_services=1,
-                total_changes=0,
+                total_changes=2,
                 cross_service_patterns={},
                 service_interactions={},
             )

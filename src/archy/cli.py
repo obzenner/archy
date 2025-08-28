@@ -16,7 +16,8 @@ from rich.table import Table
 
 from . import __version__
 from .core.analyzer import ArchitectureAnalyzer
-from .core.config import AIBackend, ArchyConfig, MultiPRConfig
+from .core.config import AIBackend, ArchyConfig, MultiPRConfig, PRSpec
+from .core.git_ops import ChangeType, GitAnalysis, GitChange, GitRepository
 from .exceptions import ArchyError
 
 # Create the main Typer app
@@ -178,14 +179,48 @@ def update(
         "--extend",
         help="Path to pattern file that extends the built-in update pattern",
     ),
+    pr: Optional[str] = typer.Option(
+        None,
+        "--pr",
+        help='JSON specification of PR to analyze instead of local git changes (format: {"repo":"org/repo","number":123})',
+    ),
 ) -> None:
     """
-    Update architecture documentation based on git changes.
+    Update architecture documentation based on git changes or PR diff.
 
-    This mode analyzes git changes since the last commit to the default branch
-    and updates existing documentation or creates new documentation if none exists.
+    This mode analyzes either:
+    - Local git changes since the last commit to the default branch (default)
+    - Specific PR changes when --pr option is provided
+
+    Examples:
+    - Local git update: archy update --doc arch.md
+    - PR-based update: archy update --doc arch.md --pr '{"repo":"org/repo","number":123}'
     """
     try:
+        # Validate PR specification if provided
+        pr_spec = None
+        if pr:
+            try:
+                pr_data = json.loads(pr)
+                pr_spec = PRSpec(**pr_data)
+                console.print(f"🔄 Updating from PR: {pr_spec.repo}#{pr_spec.number}")
+            except json.JSONDecodeError as e:
+                console.print(f"[red]❌ Invalid JSON in --pr: {e}[/red]")
+                console.print("\n[yellow]Expected format:[/yellow]")
+                console.print('{"repo": "org/repo", "number": 123}')
+                raise typer.Exit(1) from e
+            except Exception as e:
+                console.print("[red]❌ Invalid PR specification:[/red]")
+                if hasattr(e, "errors"):
+                    for error in e.errors():
+                        field = " → ".join(str(x) for x in error["loc"])
+                        console.print(f"  • {field}: {error['msg']}")
+                else:
+                    console.print(f"  • {e}")
+                raise typer.Exit(1) from e
+        else:
+            console.print("🔄 Updating from local git changes")
+
         _print_command_header("Updating", "🔄", project, folder, doc, backend)
 
         # Create configuration with progress
@@ -214,11 +249,73 @@ def update(
             analyzer = ArchitectureAnalyzer(config, progress=progress)
             analyzer._set_task(task)
 
-            # Step 3: Run analysis (this will update progress internally)
-            progress.update(
-                task, description="🔄 Updating architecture documentation..."
-            )
-            document = analyzer.analyze()
+            # Step 3: Handle PR-based analysis if requested
+            if pr_spec:
+                progress.update(task, description="📡 Fetching PR diff from GitHub...")
+                git_repo = GitRepository(project, dry_run=dry_run)
+
+                # Convert PR spec to format expected by analyze_pull_requests
+                pr_dict = pr_spec.model_dump()
+                multi_pr_analysis = git_repo.analyze_pull_requests([pr_dict])
+
+                if not multi_pr_analysis.pr_diffs:
+                    console.print(
+                        "[red]❌ No PR data found or failed to fetch PR[/red]"
+                    )
+                    raise typer.Exit(1)
+
+                pr_diff = multi_pr_analysis.pr_diffs[0]  # We only have one PR
+
+                # Convert PR diff to git changes format for existing analyzer
+                progress.update(
+                    task, description="🔄 Converting PR changes to git format..."
+                )
+                git_changes = []
+                for change in pr_diff.changes:
+                    # Map PR change types to git change types
+                    change_type_mapping = {
+                        "Added": ChangeType.ADDED,
+                        "Modified": ChangeType.MODIFIED,
+                        "Deleted": ChangeType.DELETED,
+                        "Renamed": ChangeType.RENAMED,
+                    }
+
+                    git_change = GitChange(
+                        file_path=Path(change.file_path),
+                        change_type=change_type_mapping.get(
+                            change.change_type, ChangeType.MODIFIED
+                        ),
+                        lines_added=change.lines_added,
+                        lines_removed=change.lines_removed,
+                        old_path=change.old_path if change.old_path else None,
+                    )
+                    git_changes.append(git_change)
+
+                # Create a GitAnalysis object from PR data
+                git_analysis = GitAnalysis(
+                    changed_files=git_changes,
+                    all_tracked_files=[],  # Not needed for update mode
+                    default_branch="main",  # Placeholder
+                    current_branch=f"pr-{pr_spec.number}",
+                    git_root=project,
+                    total_changes=len(git_changes),
+                    has_changes=len(git_changes) > 0,
+                )
+
+                # Inject the PR-based git analysis into the analyzer
+                analyzer.git_analysis = git_analysis
+
+                # Run update analysis with PR data
+                progress.update(
+                    task, description="🔄 Updating architecture from PR changes..."
+                )
+                document = analyzer.update_from_changes()
+            else:
+                # Step 3: Run normal analysis (this will update progress internally)
+                progress.update(
+                    task, description="🔄 Updating architecture documentation..."
+                )
+                document = analyzer.analyze()
 
             # Step 4: Save (skip in dry-run mode)
             if config.dry_run:
@@ -436,8 +533,6 @@ def distributed(
             task = progress.add_task("🔧 Initializing multi-PR analyzer...", total=None)
 
             # Create git repository for multi-PR analysis
-            from .core.git_ops import GitRepository
-
             git_repo = GitRepository(Path("."), dry_run=dry_run)
 
             # Convert PR specs to dict format for git_ops
