@@ -6,6 +6,7 @@ bash scripts with a modern, type-safe Python CLI.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,36 @@ from .core.analyzer import ArchitectureAnalyzer
 from .core.config import AIBackend, ArchyConfig, MultiPRConfig, PRSpec
 from .core.git_ops import ChangeType, GitAnalysis, GitChange, GitRepository
 from .exceptions import ArchyError
+
+
+# CLI validation
+def _validate_cli_args() -> None:
+    """
+    Validate command-line arguments to catch common mistakes.
+
+    This prevents confusing behavior like parsing '-doc' as '-d oc'.
+    """
+    # Check for common option mistakes
+    common_mistakes = {
+        "-doc": "--doc or -d",
+        "-folder": "--folder or -f",
+        "-tool": "--tool or -t",
+        "-backend": "--tool or -t",
+        "-output": "--output or -o",
+        "-prs": "--prs",
+        "-pr": "--pr",
+        "-extend": "--extend",
+        "-dry-run": "--dry-run",
+    }
+
+    for _i, arg in enumerate(sys.argv[1:], 1):
+        if arg in common_mistakes:
+            console = Console()
+            console.print(f"[red]❌ Error: Invalid option '{arg}'[/red]")
+            console.print(f"[yellow]💡 Did you mean: {common_mistakes[arg]}?[/yellow]")
+            console.print("[cyan]Use 'archy --help' to see valid options.[/cyan]")
+            raise typer.Exit(1)
+
 
 # Create the main Typer app
 app = typer.Typer(
@@ -83,6 +114,9 @@ def fresh(
     This mode analyzes the entire codebase (respecting .gitignore) and generates
     comprehensive architecture documentation including C4 diagrams and design documents.
     """
+    # Validate CLI arguments before processing
+    _validate_cli_args()
+
     try:
         _print_command_header("Creating", "🏗️", project, folder, doc, backend, name)
 
@@ -196,6 +230,9 @@ def update(
     - Local git update: archy update --doc arch.md
     - PR-based update: archy update --doc arch.md --pr '{"repo":"org/repo","number":123}'
     """
+    # Validate CLI arguments before processing
+    _validate_cli_args()
+
     try:
         # Validate PR specification if provided
         pr_spec = None
@@ -365,6 +402,9 @@ def test(
     Sends a simple test message to the specified AI backend to verify
     it's working correctly and accessible.
     """
+    # Validate CLI arguments before processing
+    _validate_cli_args()
+
     try:
         console.print(f"🧪 Testing {backend.value} backend...")
         console.print(f"📝 Message: {message}")
@@ -492,6 +532,9 @@ def distributed(
     - GitHub CLI (gh) must be installed and authenticated
     - Access to the specified repositories
     """
+    # Validate CLI arguments before processing
+    _validate_cli_args()
+
     try:
         console.print("🌐 Analyzing distributed system PRs...")
 
