@@ -89,6 +89,7 @@ sequenceDiagram
   * Technologies explicitly mentioned in imports, dependencies, or configuration
   * Communication patterns evidenced in the actual code changes
   * **BUG DETECTION**: Look for potential issues in the code changes that could affect system reliability
+  * **CRITICAL URL/TYPO DETECTION**: Carefully examine for URL mismatches, endpoint typos, spelling errors, and naming inconsistencies that could cause integration failures
 
 - **STRICT NO-HALLUCINATION RULES**:
   * Use ONLY technologies explicitly mentioned in the code
@@ -102,6 +103,14 @@ sequenceDiagram
   * Shared data resources (databases, caches, file storage)
   * Service mesh or API gateway configurations
   * Authentication tokens or service-to-service security
+
+- **CRITICAL: DETECT URL/ENDPOINT INCONSISTENCIES AND TYPOS**:
+  * **URL Mismatches**: Compare function names with actual endpoint URLs (e.g., `editDefinition` function calling `/reconnect` instead of `/definition`)
+  * **Spelling Errors**: Look for typos in endpoint paths, parameter names, field names, and configuration keys
+  * **Inconsistent Naming**: Check if API paths match their intended functionality
+  * **Route Configuration Errors**: Verify router configurations match controller implementations
+  * **Case Sensitivity Issues**: Check for inconsistent casing in URLs, headers, and parameters
+  * **Missing Path Parameters**: Ensure required path parameters are present in URL definitions
 
 - **USE ACTUAL SERVICE NAMES** - Use real service names from the code, but generic technology names when specific technology is unclear.
 
@@ -134,6 +143,15 @@ sequenceDiagram
   * **Reliability**: Missing error handling, no timeouts on external calls, unhandled exceptions, race conditions
   * **Integration**: Breaking API changes, missing input validation, version conflicts, missing backwards compatibility
   * **Data Consistency**: Missing transactions, concurrent write conflicts, eventual consistency issues
+  * **URL/Endpoint Issues**: Wrong endpoint URLs, typos in paths, function name mismatches with actual URLs, incorrect route configurations, case sensitivity problems
+  * **Naming Inconsistencies**: Misspelled parameter names, inconsistent field naming across services, typos in configuration keys, variable name conflicts
+  * **CRITICAL: Include specific file references for each risk**:
+    - For each identified risk, include the exact file path and line numbers where the issue exists
+    - Format: `service-name/path/to/file.ext:line-start-line-end` - Brief description of the specific issue
+    - Example: `user-service/src/controllers/auth.controller.ts:45-52` - Hardcoded API key in authentication logic
+    - When multiple files have the same issue, list all relevant locations
+    - This makes risks actionable for developers to immediately locate and fix problems
+  * **PRIORITIZE INTEGRATION-BREAKING ISSUES**: URL mismatches, endpoint typos, and naming inconsistencies can cause complete system failures
   * **Focus on systemic risks that could cause service outages or security breaches**
   * **Skip minor code style issues** - only include bugs that affect distributed system reliability
 
@@ -203,7 +221,34 @@ sequenceDiagram
 
 ## POTENTIAL BUGS AND RISKS
 
-[Categorized bullet points with proper line breaks]
+**Security**:
+- Risk description here
+  - `service-name/path/to/file.ext:45-52` - Specific issue description
+  - `another-service/path/to/file.ext:78-85` - Another location with same issue
+
+**Performance**:
+- Performance risk description
+  - `service-name/src/controllers/endpoint.controller.ts:123-130` - Specific performance issue
+
+**Reliability**:
+- Reliability risk description  
+  - `service-name/src/utils/helper.util.ts:67-74` - Specific reliability issue
+
+**Integration**:
+- Integration risk description
+  - `service-name/src/schemas/definition.schema.ts:45-67` - Specific integration issue
+
+**URL/Endpoint Issues**:
+- Function name doesn't match actual endpoint URL
+  - `service-name/src/controllers/edit.controller.ts:23-30` - editDefinition function calls /reconnect instead of /definition
+- Typos in API endpoint paths
+  - `service-name/src/routes/api.routes.ts:67-74` - Misspelled endpoint path /usr instead of /user
+
+**Naming Inconsistencies**:
+- Inconsistent parameter naming across services
+  - `service-a/src/models/user.model.ts:45-52` - Uses 'userId' while service-b uses 'user_id'
+- Configuration key typos
+  - `service-name/config/database.config.ts:12-15` - Misspelled 'databse' instead of 'database'
 
 ## SYSTEM-LEVEL C4 CONTEXT DIAGRAM
 
