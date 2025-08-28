@@ -1,52 +1,46 @@
 ## BUSINESS POSTURE
 
-- Product: Archy CLI generates C4 architecture documentation from a codebase using AI backends
-- Primary users: developers, tech leads, architects who need accurate, up-to-date system documentation
-- Objectives:
-  - Automate architecture discovery using real repository structure and git history
-  - Produce high-quality C4 diagrams and concise design docs quickly
-  - Support both local models and cloud AI via pluggable backends
-- Key business risks:
-  - Inaccurate or incomplete diagrams reduce trust and adoption
-  - External AI backend failures degrade UX and block workflows
-  - Accidental inclusion of sensitive content from repos in generated docs
-  - Supply chain risks in publishing and distributing the CLI
+**Business Priorities and Goals:**
+- Provide automated software architecture analysis and documentation generation
+- Enable developers to create comprehensive C4 model diagrams and design documents
+- Support multiple AI backends (Cursor Agent, Fabric) for flexible architecture analysis
+- Streamline the process of maintaining up-to-date system documentation
+- Reduce manual effort in creating and updating architectural diagrams
+
+**Key Business Risks:**
+- Risk of outdated or inaccurate architectural documentation leading to poor system understanding
+- Risk of inconsistent documentation standards across development teams
+- Risk of manual documentation processes becoming bottlenecks in development cycles
+- Risk of architectural debt accumulation due to lack of systematic analysis
 
 ## SECURITY POSTURE
 
-- Existing controls
-  - security control: Input path validation and traversal prevention in `ArchyConfig` (safe characters, blocked system dirs, write permission checks)
-  - security control: Git operations via GitPython with controlled path filtering
-  - security control: Dry-run mode to avoid executing backend calls or writing files
-  - security control: Backend subprocess timeouts and error handling in `AIBackend._run_command`
-  - security control: Linting and type checking in CI (ruff, mypy)
-  - security control: Tests and packaging checks executed in CI
-  - security control: Dependabot configuration for automated dependency updates
-  - security control: GitHub Actions concurrency control to prevent overlapping runs
-  - security control: Trusted publishing to PyPI/TestPyPI using OIDC id-token (no persistent API tokens in CI)
-  - security control: Pattern-managed prompt assembly with explicit file lists and exclusions
+**Existing Security Controls:**
+- security control: Pre-commit hooks configured for code quality and security checks
+- security control: Dependabot configured for automated dependency vulnerability scanning
+- security control: CI/CD pipeline with automated testing and validation
+- security control: Python package isolation through virtual environments
+- security control: Git-based version control with branch protection
 
-- Accepted risks
-  - accepted risk: Reliance on external CLIs `cursor-agent` and `fabric-ai` for AI inference
-  - accepted risk: Local filesystem access to repositories during analysis
-  - accepted risk: Potential inclusion of sensitive strings present in the repository in generated outputs
-  - accepted risk: Minimal dependency pinning in `pyproject.toml` may allow upstream changes between releases
+**Accepted Risks:**
+- accepted risk: Command-line tool execution requires appropriate system permissions
+- accepted risk: AI backend integrations may process sensitive codebase information
+- accepted risk: Generated documentation may contain system architecture details
 
-- Recommended high-priority controls
-  - security control: Secrets scanning and redaction before prompt assembly and before saving generated documents
-  - security control: Allow-list based file inclusion and size caps; skip binary/large files aggressively
-  - security control: Telemetry-free defaults and explicit user notice when a backend may send data off-machine
-  - security control: SBOM generation and supply chain scanning in CI (e.g., pip-audit)
-  - security control: Strict dependency version pinning for releases; lockfile for reproducible builds
-  - security control: Release artifact signing and provenance (e.g., Sigstore, SLSA level targets)
-  - security control: Optional sandboxing of subprocess backends with restricted environment
+**Recommended Security Controls:**
+- security control: Implement input validation and sanitization for all user inputs
+- security control: Add authentication and authorization for AI backend integrations
+- security control: Implement secure configuration management for API keys and credentials
+- security control: Add audit logging for all architecture analysis operations
+- security control: Implement rate limiting for AI backend API calls
+- security control: Add encryption for sensitive configuration data
 
-- Security requirements
-  - The tool must not exfiltrate repository contents without explicit user action
-  - All file outputs must respect target directory permission checks
-  - Backend timeouts and retries must be bounded and observable
-  - CI release workflow must use trusted publishing and not embed credentials
-  - Generated documentation must avoid including secrets or API keys if present in code
+**Security Requirements:**
+- Secure handling of codebase analysis data
+- Protection of AI backend API credentials
+- Secure file system access for codebase scanning
+- Input validation for all command-line arguments
+- Secure communication with external AI services
 
 ## DESIGN
 
@@ -54,154 +48,140 @@
 
 ```mermaid
 flowchart TB
-    DeveloperUser[Developer User]
-    ArchyCLI[Archy CLI]
-    LocalGitRepository[Local Git Repository]
-    CursorAgentCLI[Cursor Agent CLI]
-    FabricAI[Fabric AI CLI]
-    PatternsDirectory[Patterns Directory]
-    ArchitectureFile[Architecture Document arch.md]
-
-    DeveloperUser --> ArchyCLI
-    ArchyCLI --> LocalGitRepository
-    ArchyCLI --> CursorAgentCLI
-    ArchyCLI --> FabricAI
-    ArchyCLI --> PatternsDirectory
-    ArchyCLI --> ArchitectureFile
+    Developer[Developer]
+    DevOpsEngineer[DevOps Engineer]
+    Architect[Software Architect]
+    ArchyCLI[Archy CLI Tool]
+    CursorAgentBackend[Cursor Agent Backend]
+    FabricBackend[Fabric Backend]
+    GitRepository[Git Repository]
+    FileSystem[Local File System]
+    PyPIRegistry[PyPI Registry]
+    
+    Developer --> ArchyCLI
+    DevOpsEngineer --> ArchyCLI
+    Architect --> ArchyCLI
+    ArchyCLI --> CursorAgentBackend
+    ArchyCLI --> FabricBackend
+    ArchyCLI --> GitRepository
+    ArchyCLI --> FileSystem
+    ArchyCLI --> PyPIRegistry
 ```
 
-| Name                | Type           | Description                                          | Responsibilities                                        | Security controls |
-|---------------------|----------------|------------------------------------------------------|---------------------------------------------------------|------------------|
-| Developer User      | Person         | Engineer invoking the CLI                            | Runs commands, reviews outputs                          | n/a |
-| Archy CLI           | System         | Python CLI generating architecture docs              | Analyze repo, build prompts, call AI, write docs        | Path validation, write permission checks, timeouts |
-| Local Git Repository| External System| Project source managed via GitPython                 | Provide tracked files and diffs                         | Path filtering, excluded pattern filtering |
-| Cursor Agent CLI    | External System| AI backend binary for cloud inference                | Transform prompts to documentation                      | Subprocess timeout, availability check |
-| Fabric AI CLI       | External System| AI backend for local models                          | Offline/local inference                                 | Subprocess timeout, availability check |
-| Patterns Directory  | External Data  | Prompt templates used to guide analysis              | Provide structured instructions to backends             | Controlled file reads |
-| Architecture Document arch.md | Data | Generated design document with C4 diagrams           | Persist final output                                    | Safe file write, overwrite checks |
+| Name | Type | Description | Responsibilities | Security Controls |
+|------|------|-------------|------------------|------------------|
+| Developer | Person | Software developer using the tool | Execute architecture analysis, review generated documentation | User authentication, access control |
+| DevOps Engineer | Person | Operations engineer managing deployments | Use tool for infrastructure documentation | Role-based access control |
+| Software Architect | Person | System architect designing solutions | Create and maintain architectural documentation | Privileged access management |
+| Archy CLI Tool | Software System | Main architecture analysis and documentation tool | Analyze codebases, generate C4 diagrams, create design documents | Input validation, secure file access |
+| Cursor Agent Backend | External System | AI-powered code analysis service | Provide intelligent codebase analysis and recommendations | API authentication, rate limiting |
+| Fabric Backend | External System | Alternative AI analysis service | Provide code analysis and pattern recognition | API key management, secure communication |
+| Git Repository | External System | Version control system | Store and version codebase files | Repository access control, branch protection |
+| Local File System | External System | Local development environment | Store codebase files and generated documentation | File system permissions, access control |
+| PyPI Registry | External System | Python package repository | Distribute and manage Archy package | Package signing, integrity verification |
 
 ### C4 CONTAINER
 
 ```mermaid
 flowchart TB
-    TyperApp[Typer CLI Entry Point]
-    ConfigValidator[Configuration and Security Validator Pydantic]
-    ArchitectureAnalyzer[Architecture Analyzer Orchestrator]
-    GitRepositoryModule[Git Repository Wrapper GitPython]
-    PatternManager[Pattern Manager Templates]
-    AIBackendsBase[AI Backend Interface]
-    CursorAgentBackend[Cursor Agent Backend Subprocess]
-    FabricBackend[Fabric Backend Subprocess]
-    DocumentWriter[Architecture Document Writer]
-    RichConsole[Rich Console UI]
-    LocalGitRepository[Local Git Repository]
-    CursorAgentCLI[Cursor Agent CLI]
-    FabricAI[Fabric AI CLI]
-    PatternsDirectory[Patterns Directory]
-    ArchitectureFile[Architecture Document arch.md]
-
-    TyperApp --> ConfigValidator
-    TyperApp --> ArchitectureAnalyzer
-    TyperApp --> RichConsole
-
-    ArchitectureAnalyzer --> GitRepositoryModule
-    ArchitectureAnalyzer --> PatternManager
-    ArchitectureAnalyzer --> AIBackendsBase
-    ArchitectureAnalyzer --> DocumentWriter
-
-    AIBackendsBase --> CursorAgentBackend
-    AIBackendsBase --> FabricBackend
-
-    GitRepositoryModule --> LocalGitRepository
-    PatternManager --> PatternsDirectory
-    CursorAgentBackend --> CursorAgentCLI
-    FabricBackend --> FabricAI
-    DocumentWriter --> ArchitectureFile
+    ArchyCLI[Archy CLI Application]
+    CoreAnalyzer[Core Analyzer Module]
+    BackendManager[Backend Manager]
+    PatternEngine[Pattern Engine]
+    GitOpsModule[Git Operations Module]
+    ConfigManager[Configuration Manager]
+    CursorAgentBackend[Cursor Agent Backend]
+    FabricBackend[Fabric Backend]
+    LocalFileSystem[Local File System]
+    GitRepository[Git Repository]
+    
+    ArchyCLI --> CoreAnalyzer
+    ArchyCLI --> BackendManager
+    ArchyCLI --> PatternEngine
+    ArchyCLI --> GitOpsModule
+    ArchyCLI --> ConfigManager
+    BackendManager --> CursorAgentBackend
+    BackendManager --> FabricBackend
+    CoreAnalyzer --> LocalFileSystem
+    GitOpsModule --> GitRepository
+    ConfigManager --> LocalFileSystem
 ```
 
-| Name                          | Type        | Description                                              | Responsibilities                                              | Security controls |
-|-------------------------------|-------------|----------------------------------------------------------|---------------------------------------------------------------|------------------|
-| Typer CLI Entry Point         | Container   | Command-line interface using Typer                       | Parse args, route commands, display status                    | n/a |
-| Configuration and Security Validator | Container | Pydantic-based config and validation                     | Validate paths, backend choice, arch file location            | Path traversal prevention, write checks |
-| Architecture Analyzer Orchestrator | Container | Core orchestration logic                                 | Build prompts, call backends, handle fresh/update modes       | Bounded operations, error handling |
-| Git Repository Wrapper GitPython | Container | GitPython-based repo access                              | List tracked files, compute diffs, filter exclusions          | Path filtering, exception handling |
-| Pattern Manager Templates     | Container   | Load and combine pattern templates                       | Provide consistent instructions to backends                   | Controlled file reads |
-| AI Backend Interface          | Container   | Abstract adapter for AI backends                         | Normalize calls, implement timeouts and retries               | Subprocess timeouts, error mapping |
-| Cursor Agent Backend Subprocess | Container | Adapter around `cursor-agent` binary                      | Execute remote AI inference                                   | Availability check, timeouts |
-| Fabric Backend Subprocess     | Container   | Adapter around `fabric-ai` binary                         | Execute local model inference                                 | Availability check, timeouts |
-| Architecture Document Writer  | Container   | File writer for `arch.md`                                | Persist cleaned content                                       | Overwrite safety, permission checks |
-| Rich Console UI               | Container   | Console rendering using Rich                             | Progress, tables, statuses                                    | n/a |
-| Local Git Repository          | External    | Local repository                                         | Source of truth for analysis                                  | n/a |
-| Cursor Agent CLI              | External    | External AI CLI                                          | Inference for cloud-backed models                             | n/a |
-| Fabric AI CLI                 | External    | External AI CLI                                          | Inference for local models                                    | n/a |
-| Patterns Directory            | External    | Template files                                           | Supply prompt patterns                                        | n/a |
-| Architecture Document arch.md | Data        | Output file                                              | Store final documentation                                     | n/a |
+| Name | Type | Description | Responsibilities | Security Controls |
+|------|------|-------------|------------------|------------------|
+| Archy CLI Application | Container | Main command-line interface | Parse commands, orchestrate analysis workflow | Input validation, error handling |
+| Core Analyzer Module | Container | Codebase analysis engine | Analyze code structure, identify components | Secure file access, data sanitization |
+| Backend Manager | Container | AI backend integration layer | Manage connections to AI services | API authentication, credential management |
+| Pattern Engine | Container | Pattern recognition and documentation | Apply analysis patterns, generate documentation | Template validation, output sanitization |
+| Git Operations Module | Container | Git repository interaction | Handle git operations, branch management | Repository access control, secure operations |
+| Configuration Manager | Container | Configuration and settings management | Manage tool configuration, user preferences | Secure config storage, validation |
+| Cursor Agent Backend | External Container | AI analysis service | Provide intelligent code analysis | API security, rate limiting |
+| Fabric Backend | External Container | Alternative AI service | Provide code analysis capabilities | Secure API communication |
+| Local File System | External Container | File system interface | Store and retrieve files | File permissions, access control |
+| Git Repository | External Container | Version control system | Manage codebase versions | Repository security, branch protection |
 
 ### C4 DEPLOYMENT
 
 ```mermaid
 flowchart TB
-    DeveloperWorkstation[Developer Workstation]
-    PythonRuntime[Python Runtime]
-    ArchyPackage[Archy Python Package]
-    LocalGitRepository[Local Git Repository]
-    CursorAgentCLI[Cursor Agent CLI Binary]
-    FabricAI[Fabric AI CLI Binary]
-
-    GithubActionsCI[GitHub Actions CI]
-    BuildJob[Build and Package Job]
-    PublishJob[Publish Job]
-    TestPyPIRegistry[TestPyPI Registry]
+    DeveloperMachine[Developer Machine]
+    PythonEnvironment[Python Virtual Environment]
+    ArchyPackage[Archy Package Installation]
+    LocalFileSystem[Local File System]
+    GitRepository[Git Repository]
+    CursorAgentAPI[Cursor Agent API]
+    FabricAPI[Fabric API]
     PyPIRegistry[PyPI Registry]
-
-    DeveloperWorkstation --> PythonRuntime
-    PythonRuntime --> ArchyPackage
-    ArchyPackage --> LocalGitRepository
-    ArchyPackage --> CursorAgentCLI
-    ArchyPackage --> FabricAI
-
-    GithubActionsCI --> BuildJob
-    BuildJob --> PublishJob
-    PublishJob --> TestPyPIRegistry
-    PublishJob --> PyPIRegistry
+    
+    DeveloperMachine --> PythonEnvironment
+    PythonEnvironment --> ArchyPackage
+    ArchyPackage --> LocalFileSystem
+    ArchyPackage --> GitRepository
+    ArchyPackage --> CursorAgentAPI
+    ArchyPackage --> FabricAPI
+    ArchyPackage --> PyPIRegistry
 ```
 
-| Name                 | Type            | Description                                          | Responsibilities                                        | Security controls |
-|----------------------|-----------------|------------------------------------------------------|---------------------------------------------------------|------------------|
-| Developer Workstation| Node            | User machine (macOS, Windows, Linux)                 | Run CLI locally                                         | Local OS controls |
-| Python Runtime       | Runtime         | Python interpreter                                   | Execute Archy code                                      | Virtual env isolation |
-| Archy Python Package | Application     | Installed `archy` package                            | Provide CLI and logic                                   | Dependency constraints |
-| Local Git Repository | Data/Service    | Project repo on disk                                 | Source for analysis                                     | Local FS permissions |
-| Cursor Agent CLI Binary | External Tool| Installed `cursor-agent`                             | AI backend execution                                    | Process timeouts |
-| Fabric AI CLI Binary | External Tool   | Installed `fabric-ai`                                | Local AI backend execution                              | Process timeouts |
-| GitHub Actions CI    | CI Platform     | GitHub-hosted runners                                | Run tests, build artifacts                              | Concurrency control |
-| Build and Package Job| CI Job          | Build wheels/sdist, verify                           | Ensure build integrity                                   | Isolation on runner |
-| Publish Job          | CI Job          | Trusted publish to registries                        | Upload artifacts                                        | OIDC id-token, no static secrets |
-| TestPyPI Registry    | Registry        | Test package distribution endpoint                   | Receive test releases                                   | Registry auth via OIDC |
-| PyPI Registry        | Registry        | Production package registry                          | Receive official releases                               | Registry auth via OIDC |
+| Name | Type | Description | Responsibilities | Security Controls |
+|------|------|-------------|------------------|------------------|
+| Developer Machine | Deployment Node | Local development workstation | Host the Archy tool and development environment | System security, user authentication |
+| Python Virtual Environment | Deployment Node | Isolated Python runtime | Provide isolated package dependencies | Environment isolation, dependency management |
+| Archy Package Installation | Deployment Node | Installed Archy package | Execute architecture analysis commands | Package integrity, secure execution |
+| Local File System | Deployment Node | Local storage system | Store codebase files and generated documentation | File system security, access control |
+| Git Repository | Deployment Node | Version control system | Manage codebase versions and history | Repository security, access control |
+| Cursor Agent API | Deployment Node | External AI service endpoint | Provide code analysis services | API security, authentication |
+| Fabric API | Deployment Node | External AI service endpoint | Provide alternative analysis services | Secure API communication |
+| PyPI Registry | Deployment Node | Python package repository | Distribute and manage package versions | Package signing, integrity verification |
 
 ## RISK ASSESSMENT
 
-- Critical business processes to protect
-  - Reliable generation of accurate architecture documentation from repositories
-  - Safe interaction with external AI backends without leaking sensitive content
-  - Secure build and publication pipeline for distributing the CLI
+**Critical Business Processes:**
+- Software architecture documentation and maintenance
+- Codebase analysis and pattern recognition
+- AI-powered architectural recommendations
+- Automated documentation generation
 
-- Data to protect and sensitivity
-  - Source code and configuration files from local repositories: high sensitivity
-  - Generated documents that may include architectural details: medium sensitivity
-  - CI secrets and publishing credentials (via OIDC tokens): high sensitivity
+**Data Protection Requirements:**
+- **High Sensitivity**: Source code and architectural details that may contain proprietary business logic
+- **Medium Sensitivity**: Configuration files and project metadata
+- **Low Sensitivity**: Generated documentation and analysis reports (unless containing sensitive architectural details)
 
 ## QUESTIONS & ASSUMPTIONS
 
-- Questions
-  - Should generated documents automatically exclude files matching a secrets pattern, or require explicit opt-in to include sensitive paths?
-  - Is offline-only operation required for some users, mandating `fabric-ai` as default in certain environments?
-  - What maximum repository size or file size thresholds should be enforced by default?
-  - Should telemetry be disabled by default, and are there corporate policies on data egress?
+**Business Posture Questions:**
+- What is the target user base size and growth expectations?
+- What are the primary use cases driving adoption?
+- What is the expected frequency of architecture analysis operations?
 
-- Assumptions
-  - Users understand that `cursor-agent` may transmit prompts off-machine, while `fabric-ai` can operate locally
-  - Repository content analyzed is limited to tracked files and excludes common lock and binary artifacts
-  - CI trusted publishing remains configured with OIDC and does not rely on long-lived tokens
-  - Dependency updates are managed via Dependabot, with manual review before release
+**Security Posture Assumptions:**
+- AI backends are trusted third-party services with appropriate security controls
+- Local file system access is restricted to authorized users only
+- Generated documentation may be shared within development teams
+- API credentials are managed securely through environment variables or secure storage
+
+**Design Assumptions:**
+- Python 3.8+ runtime environment is available
+- Git repository access is available for codebase analysis
+- Network connectivity is available for AI backend services
+- Local file system has sufficient storage for generated documentation
+- Users have appropriate permissions to read codebase files and write generated documentation
